@@ -70,6 +70,22 @@ Future<void> runCapture(GlobalKey root, DemoDriver d) async {
     await shot('${mode}_3_dialog');
     d.setDialog(false);
     await wait(800);
+    mark('$mode settings');
+    d.setSettings(true);
+    await wait(1200);
+    await shot('${mode}_4_settings');
+    d.settingsScroll(160);
+    await wait(900);
+    await shot('${mode}_5_settings_scrolled');
+    d.settingsScroll(0);
+    await wait(700);
+    d.settingsOptions(true);
+    await wait(1000);
+    await shot('${mode}_6_settings_options');
+    d.settingsOptions(false);
+    await wait(600);
+    d.setSettings(false);
+    await wait(900);
   }
   // stress: open / close the menu repeatedly (the memory-heavy path)
   mark('menu stress');

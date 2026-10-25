@@ -72,4 +72,24 @@ class BlendMaterial {
       BlendLayer(Color(0x52000000), BlendLayerMode.srcOver),
     ],
   );
+
+  // MIUIWeather Obj!Tza@55b8d1 / @55b8f1 (pp+0x331a0 / pp+0x33198, used by closure 0x7b6bd8): the only
+  // sigma-20 light/dark pair in the app. Used here for the floating bar behind the gradientBlur mask;
+  // that it is the bar's material is inferred.
+  static const appBarLight = BlendMaterial(
+    sigma: 20,
+    fallback: Color(0xfff7f7f7),
+    layers: [
+      BlendLayer(Color(0x1cffffff), BlendLayerMode.plusLighter),
+      BlendLayer(Color(0x85a6a6a6), BlendLayerMode.overlay),
+    ],
+  );
+  static const appBarDark = BlendMaterial(
+    sigma: 20,
+    fallback: Color(0xff1f1f1f),
+    layers: [
+      BlendLayer(Color(0x33585858), BlendLayerMode.plusDarker),
+      BlendLayer(Color(0x1a666666), BlendLayerMode.colorBurn),
+    ],
+  );
 }

@@ -155,7 +155,8 @@ extension LMGaussianKernel on LMGaussianState {
 }
 
 /// Taps 0..4 of the separable kernel equal to AcquireGlassBlurTextures' reflect blur followed by the
-/// tint blur (both [GlassFilter.baseBlur]), plus its half-width; null when the glass cannot be fused
+/// tint blur (both [GlassFilter.baseBlur]), plus its half-width. For half-width 1, `k[0]` holds the
+/// bilinear tap offset instead (see the shader's fast path). Null when the glass cannot be fused
 /// (a blur needs downsampling, the base blur is not a near-identity, or the kernel is wider than 4).
 ({double k0, List<double> k, int radius})? fusedRefractKernel(GlassFilter g) {
   final base = LMGaussianState.forRadius(g.refractBlur);
@@ -170,10 +171,24 @@ extension LMGaussianKernel on LMGaussianState {
       c[a + b] += reflect[a] * tint[b];
     }
   }
+  // Taps under 1% of the total are dropped and the rest renormalised (for the app's filter only the
+  // outer pair, 0.5% each, goes), which usually leaves a 3-tap kernel the shader evaluates as 4
+  // bilinear samples instead of a 5x5 loop.
   var radius = 0;
   for (var d = 1; d <= 12; d++) {
-    if (c[12 + d] > 1e-4) radius = d;
+    if (c[12 + d] >= 0.01) radius = d;
   }
   if (radius > 4) return null;
-  return (k0: c[12], k: [for (var d = 1; d <= 4; d++) c[12 + d]], radius: radius);
+  var sum = c[12];
+  for (var d = 1; d <= radius; d++) {
+    sum += 2 * c[12 + d];
+  }
+  final k0 = c[12] / sum;
+  final k = [for (var d = 1; d <= 4; d++) d <= radius ? c[12 + d] / sum : 0.0];
+  if (radius <= 1) {
+    // [k1 k0 k1] = two half-weight bilinear taps at +-d (see FUSED_REFRACT); radius 1 marks this mode
+    final half = k0 / 2 + k[0];
+    return (k0: k0, k: [k[0] / half, 0.0, 0.0, 0.0], radius: 1);
+  }
+  return (k0: k0, k: k, radius: radius);
 }

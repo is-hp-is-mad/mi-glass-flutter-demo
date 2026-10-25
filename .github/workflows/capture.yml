@@ -45,7 +45,10 @@ jobs:
           python-version: '3.12'
 
       - name: Fetch MiSans (official download, not redistributed)
-        run: python tool/fetch_misans.py
+        shell: bash
+        run: |
+          curl -fL --retry 8 --retry-all-errors --retry-delay 5 -C - -o "$RUNNER_TEMP/MiSans.zip" https://hyperos.mi.com/font-download/MiSans.zip
+          python tool/fetch_misans.py "$RUNNER_TEMP/MiSans.zip"
 
       - run: flutter pub get
       - run: flutter analyze

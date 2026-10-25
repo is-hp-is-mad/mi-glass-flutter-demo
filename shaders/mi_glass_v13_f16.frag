@@ -255,6 +255,14 @@ highp vec4 _fl_refract(highp vec2 uv)
 {
     if (_fl_fused < 0.5) return vec4(texture(uRefractTex, uv).rgb, texture(_fl_refractA, uv).r);
     highp vec3 acc = vec3(0.0);
+    if (_fl_kr < 1.5)
+    {
+        // 3x3 kernel [k1 k0 k1]^2 as 4 bilinear taps at (+-d, +-d), d = _fl_k.x (exact with linear filtering)
+        highp vec2 d = vec2(_fl_k.x) * _198_uInvResolution;
+        acc = 0.25 * (texture(_fl_backdrop, uv + d).rgb + texture(_fl_backdrop, uv - d).rgb
+                    + texture(_fl_backdrop, uv + vec2(d.x, -d.y)).rgb + texture(_fl_backdrop, uv + vec2(-d.x, d.y)).rgb);
+        return _fl_tint(vec4(acc, 1.0), vec4(texture(_fl_backdrop, uv).rgb, 1.0), uv / _198_uInvResolution);
+    }
     for (int j = -4; j <= 4; j++)
     {
         if (abs(float(j)) > _fl_kr) continue;

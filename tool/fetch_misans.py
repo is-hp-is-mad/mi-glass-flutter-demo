@@ -7,12 +7,35 @@ usage: python tool/fetch_misans.py
 import os
 import shutil
 import tempfile
+import time
 import urllib.request
 import zipfile
 
-URL = 'https://hyperos.mi.com/font-download/MiSans.zip'
+URLS = [
+    'https://hyperos.mi.com/font-download/MiSans.zip',
+    'https://cdn.cnbj1.fds.api.mi-img.com/vipmlmodel/font/MiSans/MiSans.zip',  # same file, Xiaomi CDN
+]
 WEIGHTS = ['ExtraLight', 'Regular', 'Medium', 'Semibold']  # 200, 400, 500, 600 (see pubspec.yaml)
 DEST = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'fonts')
+
+
+def download(path):
+    for attempt in range(3):
+        for url in URLS:
+            print(f'downloading {url} ...')
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (mi-glass-flutter-demo font fetch)'})
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r, open(path, 'wb') as f:
+                    shutil.copyfileobj(r, f)
+            except OSError as e:
+                print(f'  failed: {e}')
+                continue
+            if zipfile.is_zipfile(path):
+                return
+            with open(path, 'rb') as f:
+                print(f'  not a zip ({os.path.getsize(path)} bytes): {f.read(120)!r}')
+        time.sleep(5 * (attempt + 1))
+    raise SystemExit('could not download MiSans')
 
 
 def main():
@@ -23,9 +46,7 @@ def main():
         return
     with tempfile.TemporaryDirectory() as tmp:
         archive = os.path.join(tmp, 'MiSans.zip')
-        print(f'downloading {URL} ...')
-        with urllib.request.urlopen(URL) as r, open(archive, 'wb') as f:
-            shutil.copyfileobj(r, f)
+        download(archive)
         with zipfile.ZipFile(archive) as z:
             for info in z.infolist():
                 name = os.path.basename(info.filename)

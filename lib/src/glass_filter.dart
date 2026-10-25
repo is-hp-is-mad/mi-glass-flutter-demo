@@ -137,3 +137,43 @@ class LMGaussianState {
     return LMGaussianState._(sigma, variance, factor, level, count, weight, offset);
   }
 }
+
+extension LMGaussianKernel on LMGaussianState {
+  /// The 1-D discrete kernel (taps -6..6) one `MiLmBlur` pass applies at factor 1: the blur shader
+  /// samples the first [count] (offset, weight) taps at +offset and -offset with bilinear filtering.
+  List<double> discreteKernel() {
+    final k = List<double>.filled(13, 0);
+    for (var i = 0; i < count; i++) {
+      for (final o in [offset[i], -offset[i]]) {
+        final lo = o.floor(), f = o - lo;
+        if (lo >= -6 && lo <= 6) k[lo + 6] += weight[i] * (1 - f);
+        if (lo + 1 >= -6 && lo + 1 <= 6) k[lo + 7] += weight[i] * f;
+      }
+    }
+    return k;
+  }
+}
+
+/// Taps 0..4 of the separable kernel equal to AcquireGlassBlurTextures' reflect blur followed by the
+/// tint blur (both [GlassFilter.baseBlur]), plus its half-width; null when the glass cannot be fused
+/// (a blur needs downsampling, the base blur is not a near-identity, or the kernel is wider than 4).
+({double k0, List<double> k, int radius})? fusedRefractKernel(GlassFilter g) {
+  final base = LMGaussianState.forRadius(g.refractBlur);
+  final blur = LMGaussianState.forRadius(g.baseBlur);
+  if (base.factor != 1 || base.variance > 0.1 || blur.factor != 1) return null;
+  final identity = List<double>.generate(13, (i) => i == 6 ? 1.0 : 0.0);
+  final reflect = g.blurSourceMode == g.refractBlur.toInt() ? identity : blur.discreteKernel();
+  final tint = blur.discreteKernel();
+  final c = List<double>.filled(25, 0); // taps -12..12
+  for (var a = 0; a < 13; a++) {
+    for (var b = 0; b < 13; b++) {
+      c[a + b] += reflect[a] * tint[b];
+    }
+  }
+  var radius = 0;
+  for (var d = 1; d <= 12; d++) {
+    if (c[12 + d] > 1e-4) radius = d;
+  }
+  if (radius > 4) return null;
+  return (k0: c[12], k: [for (var d = 1; d <= 4; d++) c[12 + d]], radius: radius);
+}

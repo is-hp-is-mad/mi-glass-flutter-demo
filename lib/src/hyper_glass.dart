@@ -310,6 +310,8 @@ class _RenderGlass extends RenderBox {
 
   @override
   void detach() {
+    _lastShader?.dispose();
+    _lastShader = null;
     _scene._frame.removeListener(markNeedsPaint);
     _scene._surfaces.remove(this);
     super.detach();
@@ -325,16 +327,41 @@ class _RenderGlass extends RenderBox {
     final w = (size.width * dpr).round(), h = (size.height * dpr).round();
     if (w < 2 || h < 2) return;
     final m = material;
+    final canvas = context.canvas;
+    // Skia (no Impeller): the glass / blend shader is drawn straight onto the canvas from the plain
+    // backdrop. toImageSync intermediates are what made Skia + ANGLE hold gigabytes; Impeller frees them
+    // promptly, so it keeps the engine's exact multi-pass chain.
+    if (!ui.ImageFilter.isShaderFilterSupported) {
+      final ui.FragmentShader? shader;
+      if (m is GlassFilter) {
+        shader = r.fusedGlassShader(m, backdrop, origin, w, h, radius * dpr, opacity: opacity);
+      } else {
+        m as BlendMaterial;
+        final extent = _scene._region.size * dpr;
+        shader = r.blendShader(m, _scene.blurredFor(m.sigma)!, extent, origin, w, h, radius * dpr, opacity: opacity);
+      }
+      if (shader != null) {
+        canvas
+          ..save()
+          ..translate(offset.dx, offset.dy)
+          ..scale(size.width / w, size.height / h); // local units = physical pixels, as the shader expects
+        canvas.drawRect(Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()), Paint()..shader = shader);
+        canvas.restore();
+        _lastShader?.dispose(); // kept until the next paint so the recorded frame can still use it
+        _lastShader = shader;
+        return;
+      }
+    }
     final ui.Image img;
     if (m is GlassFilter) {
       img = r.drawGlass(m, _scene.refractFor(m)!, origin, w, h, radius * dpr, opacity: opacity);
     } else {
       m as BlendMaterial;
       // backdrop extent in output (physical) pixels, whatever resolution it was captured at
-      final size = _scene._region.size * dpr;
-      img = r.drawBlend(m, _scene.blurredFor(m.sigma)!, size, origin, w, h, radius * dpr, opacity: opacity);
+      final extent = _scene._region.size * dpr;
+      img = r.drawBlend(m, _scene.blurredFor(m.sigma)!, extent, origin, w, h, radius * dpr, opacity: opacity);
     }
-    context.canvas.drawImageRect(
+    canvas.drawImageRect(
       img,
       Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
       offset & size,
@@ -342,4 +369,6 @@ class _RenderGlass extends RenderBox {
     );
     img.dispose();
   }
+
+  ui.FragmentShader? _lastShader;
 }

@@ -10,6 +10,51 @@ typedef _Gl = MiGlassV13F16Layout;
 
 /// Pre-tinted refract texture: colour in [rgb], the engine's alpha channel in [a] (red).
 typedef RefractTexture = ({ui.Image rgb, ui.Image? a});
+typedef _TintSlots = ({
+  int enabled,
+  int luminanceCoeffs,
+  int glassColor,
+  int darkerRange,
+  int bgColorSat,
+  int bgColorBri,
+  int luminanceAmount,
+  int saturation,
+  int brightness,
+  int innerColorWhite,
+  int innerColorMix,
+  int burn,
+  int darker,
+});
+const _TintSlots _upTint = (
+  enabled: _Up.glass_tint_enabled__f,
+  luminanceCoeffs: _Up.glass_tint_luminance_coeffs,
+  glassColor: _Up.glass_tint_glass_color,
+  darkerRange: _Up.glass_tint_darker_range,
+  bgColorSat: _Up.glass_tint_bg_color_sat,
+  bgColorBri: _Up.glass_tint_bg_color_bri,
+  luminanceAmount: _Up.glass_tint_luminance_amount,
+  saturation: _Up.glass_tint_saturation,
+  brightness: _Up.glass_tint_brightness,
+  innerColorWhite: _Up.glass_tint_inner_color_white,
+  innerColorMix: _Up.glass_tint_inner_color_mix,
+  burn: _Up.glass_tint_burn,
+  darker: _Up.glass_tint_darker,
+);
+const _TintSlots _glTint = (
+  enabled: _Gl.glass_tint_enabled__f,
+  luminanceCoeffs: _Gl.glass_tint_luminance_coeffs,
+  glassColor: _Gl.glass_tint_glass_color,
+  darkerRange: _Gl.glass_tint_darker_range,
+  bgColorSat: _Gl.glass_tint_bg_color_sat,
+  bgColorBri: _Gl.glass_tint_bg_color_bri,
+  luminanceAmount: _Gl.glass_tint_luminance_amount,
+  saturation: _Gl.glass_tint_saturation,
+  brightness: _Gl.glass_tint_brightness,
+  innerColorWhite: _Gl.glass_tint_inner_color_white,
+  innerColorMix: _Gl.glass_tint_inner_color_mix,
+  burn: _Gl.glass_tint_burn,
+  darker: _Gl.glass_tint_darker,
+);
 typedef _Sdf = ({ui.Image a, ui.Image b, double range});
 
 /// Dart translation of `miglass::Renderer` (port/src/hyper_glass.cpp): the engine's
@@ -115,30 +160,32 @@ class HyperGlassRenderer {
   }
 
   /// BuildGlassTintConfig (0xd3d778) -> GlassTintInfo.
-  static void _fillTint(ui.FragmentShader s, GlassFilter? g) {
+  static void _fillTint(ui.FragmentShader s, GlassFilter? g) => _fillTintAt(s, g, _upTint);
+
+  static void _fillTintAt(ui.FragmentShader s, GlassFilter? g, _TintSlots t) {
     if (g == null) {
-      s.setFloat(_Up.glass_tint_enabled__f, 0);
+      s.setFloat(t.enabled, 0);
       return;
     }
     final b = g.luminanceBezier;
-    _vec(s, _Up.glass_tint_luminance_coeffs, [
+    _vec(s, t.luminanceCoeffs, [
       (b[1] * 3.0 - b[0]) + b[2] * -3.0 + b[3],
       b[1] * -6.0 + b[0] * 3.0 + b[2] * 3.0,
       b[1] * 3.0 + b[0] * -3.0,
       b[0],
     ]);
-    _vec(s, _Up.glass_tint_glass_color, g.glassColor);
-    _vec(s, _Up.glass_tint_darker_range, g.darkerRange);
-    s.setFloat(_Up.glass_tint_enabled__f, 1);
-    s.setFloat(_Up.glass_tint_bg_color_sat, g.bgColorSaturation);
-    s.setFloat(_Up.glass_tint_bg_color_bri, g.bgColorBrightness);
-    s.setFloat(_Up.glass_tint_luminance_amount, g.luminanceAmount);
-    s.setFloat(_Up.glass_tint_saturation, g.saturation);
-    s.setFloat(_Up.glass_tint_brightness, g.brightness);
-    s.setFloat(_Up.glass_tint_inner_color_white, g.innerColorWhite);
-    s.setFloat(_Up.glass_tint_inner_color_mix, g.innerColorMix);
-    s.setFloat(_Up.glass_tint_burn, math.max(1.0, g.burn));
-    s.setFloat(_Up.glass_tint_darker, g.darker);
+    _vec(s, t.glassColor, g.glassColor);
+    _vec(s, t.darkerRange, g.darkerRange);
+    s.setFloat(t.enabled, 1);
+    s.setFloat(t.bgColorSat, g.bgColorSaturation);
+    s.setFloat(t.bgColorBri, g.bgColorBrightness);
+    s.setFloat(t.luminanceAmount, g.luminanceAmount);
+    s.setFloat(t.saturation, g.saturation);
+    s.setFloat(t.brightness, g.brightness);
+    s.setFloat(t.innerColorWhite, g.innerColorWhite);
+    s.setFloat(t.innerColorMix, g.innerColorMix);
+    s.setFloat(t.burn, math.max(1.0, g.burn));
+    s.setFloat(t.darker, g.darker);
   }
 
   /// ExecuteLMGaussianBlur: downsample -> blur X/Y -> MiLmUpsampleSimple back to the source size.
@@ -265,6 +312,38 @@ class HyperGlassRenderer {
     int h,
     double shapeRadius, {
     double opacity = 1.0,
+  }) => _pass(_glassShader(g, origin, w, h, shapeRadius, opacity, refract: refract), w, h);
+
+  final _kernels = <GlassFilter, ({double k0, List<double> k, int radius})?>{};
+
+  /// The glass as a shader that reads the plain [backdrop] (no refract texture chain): reflect blur,
+  /// tint blur and the tinting upsample run inside the glass shader (see tools/to_flutter.py,
+  /// FUSED_REFRACT). Draw it over a [w]x[h] rect whose local units are physical pixels. Null when [g]
+  /// cannot be fused; use [refractTexture] + [drawGlass] then.
+  ui.FragmentShader? fusedGlassShader(
+    GlassFilter g,
+    ui.Image backdrop,
+    ui.Offset origin,
+    int w,
+    int h,
+    double shapeRadius, {
+    double opacity = 1.0,
+  }) {
+    final kernel = _kernels.putIfAbsent(g, () => fusedRefractKernel(g));
+    if (kernel == null) return null;
+    return _glassShader(g, origin, w, h, shapeRadius, opacity, backdrop: backdrop, kernel: kernel);
+  }
+
+  ui.FragmentShader _glassShader(
+    GlassFilter g,
+    ui.Offset origin,
+    int w,
+    int h,
+    double shapeRadius,
+    double opacity, {
+    RefractTexture? refract,
+    ui.Image? backdrop,
+    ({double k0, List<double> k, int radius})? kernel,
   }) {
     final fw = w.toDouble(), fh = h.toDouble();
     final half = math.min(fw, fh) * 0.5;
@@ -276,7 +355,8 @@ class HyperGlassRenderer {
     final s = _glass.fragmentShader();
     _vec(s, _Gl.fl_rect, [0, 0, fw, fh]);
     _vec(s, _Gl.uResolution, [-origin.dx, -origin.dy]);
-    _vec(s, _Gl.uInvResolution, [1.0 / refract.rgb.width, 1.0 / refract.rgb.height]);
+    final src = refract?.rgb ?? backdrop!;
+    _vec(s, _Gl.uInvResolution, [1.0 / src.width, 1.0 / src.height]);
     _vec(s, _Gl.uGeoPxSize, [fw, fh, radius]);
     s.setFloat(_Gl.uShapeEdgePx, edge);
     s.setFloat(_Gl.uShapeEdgePow, g.edgePow);
@@ -309,9 +389,24 @@ class HyperGlassRenderer {
     s.setImageSampler(_Gl.sampler_uSdfTex, sdf.a);
     s.setImageSampler(_Gl.sampler_uMaskTex, sdf.a);
     s.setImageSampler(_Gl.sampler_fl_sdfB, sdf.b);
-    s.setImageSampler(_Gl.sampler_uRefractTex, refract.rgb);
-    s.setImageSampler(_Gl.sampler_fl_refractA, refract.a ?? refract.rgb);
-    return _pass(s, w, h);
+    if (kernel == null) {
+      s.setFloat(_Gl.fl_fused, 0);
+      s.setImageSampler(_Gl.sampler_uRefractTex, refract!.rgb);
+      s.setImageSampler(_Gl.sampler_fl_refractA, refract.a ?? refract.rgb);
+      s.setImageSampler(_Gl.sampler_fl_backdrop, refract.rgb);
+    } else {
+      s.setFloat(_Gl.fl_fused, 1);
+      s.setFloat(_Gl.fl_kr, kernel.radius.toDouble());
+      s.setFloat(_Gl.fl_k0, kernel.k0);
+      _vec(s, _Gl.fl_k, kernel.k);
+      s.setFloat(_Gl.hdr_info_enable_hdr__f, 0);
+      _fillTintAt(s, g, _glTint);
+      s.setFloat(_Gl.upsample_info_noise_coeff, 0.0045); // 0x3b9374bc, as in the upsample pass
+      s.setImageSampler(_Gl.sampler_uRefractTex, backdrop!);
+      s.setImageSampler(_Gl.sampler_fl_refractA, backdrop);
+      s.setImageSampler(_Gl.sampler_fl_backdrop, backdrop);
+    }
+    return s;
   }
 
   /// Gaussian blur of [src] with [sigma] physical px, computed at 1/4 resolution (sampled bilinearly
@@ -350,6 +445,18 @@ class HyperGlassRenderer {
     int h,
     double radius, {
     double opacity = 1.0,
+  }) => _pass(blendShader(m, blurred, backdropSize, origin, w, h, radius, opacity: opacity), w, h);
+
+  /// [drawBlend] as a shader, to draw directly over a [w]x[h] rect in physical-pixel local units.
+  ui.FragmentShader blendShader(
+    BlendMaterial m,
+    ui.Image blurred,
+    ui.Size backdropSize,
+    ui.Offset origin,
+    int w,
+    int h,
+    double radius, {
+    double opacity = 1.0,
   }) {
     final s = _blend.fragmentShader();
     var i = 0;
@@ -374,13 +481,7 @@ class HyperGlassRenderer {
     }
     f(opacity);
     s.setImageSampler(0, blurred);
-    final rec = ui.PictureRecorder();
-    ui.Canvas(rec).drawRect(ui.Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()), ui.Paint()..shader = s);
-    final pic = rec.endRecording();
-    final img = pic.toImageSync(w, h);
-    pic.dispose();
-    s.dispose();
-    return img;
+    return s;
   }
 
   void dispose() {

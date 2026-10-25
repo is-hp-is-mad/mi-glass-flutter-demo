@@ -80,7 +80,16 @@ def convert(src, recipe):
         body, inst = m.group(1), m.group(2)
         for t, n, cnt in re.findall(r'(?:highp |mediump |lowp )?(\w+) (\w+)(?:\[(\d+)\])?;', body):
             add(f'{inst}_{n}', t, int(cnt) if cnt else 0)
+            if NAME == 'mi_lm_upsample_tint':
+                UPSAMPLE_UNIFORMS.append((f'{inst}_{n}', t, int(cnt) if cnt else 0))
         return ''
+
+    if NAME == 'mi_glass_v13_f16':
+        # fused (Skia) refract path, see FUSED_REFRACT
+        add('_fl_fused', 'float')
+        add('_fl_kr', 'float')
+        add('_fl_k0', 'float')
+        add('_fl_k', 'vec4')
 
     blocks = re.findall(r'layout\(std140\) uniform \w+\s*\{[^}]*\}\s*(\w+);', src)
     src = re.sub(r'layout\(std140\) uniform \w+\s*\{([^}]*)\}\s*(\w+);\n', block, src)
@@ -123,6 +132,9 @@ def convert(src, recipe):
     if k:
         src = re.sub(r'\n\s*_\d+\+\+;\n(\s*continue;)', r'\n\1', src)
 
+    if NAME == 'mi_glass_v13_f16':
+        for u in UPSAMPLE_UNIFORMS:  # the original tint function's inputs
+            add(*u)
     src = sdf_codec(src, samplers)
     out = HEADER + '\n'.join(defines) + '\n' + '\n'.join(decls) + '\n' + src
     return out, layout, samplers
@@ -151,27 +163,74 @@ highp vec4 _fl_sdf(highp vec2 uv)
 '''
 
 
+UPSAMPLE_UNIFORMS = []
+TINT_FUNC = ''
+
 # The tinted refract texture keeps data (not coverage) in alpha, which Skia would clamp as premultiplied
-# colour (rgb <= a). The upsample pass is therefore split into an opaque RGB image and an opaque alpha image.
-REFRACT_DEC = '''uniform sampler2D _fl_refractA;
+# colour (rgb <= a), so the multi-pass path splits it into an opaque RGB image and an opaque alpha image.
+#
+# Skia path (no intermediate textures): AcquireGlassBlurTextures' reflect blur, tint blur and
+# MiLmUpsampleSimple are folded into one separable kernel over the backdrop (_fl_k0, _fl_k = taps 0..4,
+# computed in Dart by running the LM blur taps on an impulse), followed by the upsample shader's own
+# main() body, wrapped unchanged as _fl_tint(). Valid when both blurs run at factor 1 (the app's case).
+FUSED_REFRACT = '''uniform sampler2D _fl_refractA;
+uniform sampler2D _fl_backdrop;
+highp float _fl_kw(int a)
+{
+    if (a == 0) return _fl_k0;
+    if (a == 1) return _fl_k.x;
+    if (a == 2) return _fl_k.y;
+    if (a == 3) return _fl_k.z;
+    return _fl_k.w;
+}
+@TINT@
 highp vec4 _fl_refract(highp vec2 uv)
 {
-    return vec4(texture(uRefractTex, uv).rgb, texture(_fl_refractA, uv).r);
+    if (_fl_fused < 0.5) return vec4(texture(uRefractTex, uv).rgb, texture(_fl_refractA, uv).r);
+    highp vec3 acc = vec3(0.0);
+    for (int j = -4; j <= 4; j++)
+    {
+        if (abs(float(j)) > _fl_kr) continue;
+        highp float wj = _fl_kw(j < 0 ? -j : j);
+        for (int i = -4; i <= 4; i++)
+        {
+            if (abs(float(i)) > _fl_kr) continue;
+            acc += (wj * _fl_kw(i < 0 ? -i : i)) * texture(_fl_backdrop, uv + vec2(float(i), float(j)) * _198_uInvResolution).rgb;
+        }
+    }
+    return _fl_tint(vec4(acc, 1.0), vec4(texture(_fl_backdrop, uv).rgb, 1.0), uv / _198_uInvResolution);
 }
 
 '''
 
 
+def make_tint_func(src):
+    head = 'void main()\n{\n'
+    body = src[src.index(head) + len(head):src.rindex('}')]
+    body = body.replace('    highp vec2 v_texture_coords = FlutterFragCoord().xy / _fl_size;\n', '', 1)
+    for a, b in [('texture(texture_sampler, v_texture_coords)', '_fl_c'),
+                 ('texture(big_blur_sampler, v_texture_coords)', '_fl_big'),
+                 ('v_texture_coords * upsample_info_output_size', '_fl_px')]:
+        assert a in body, a
+        body = body.replace(a, b)
+    assert 'v_texture_coords' not in body
+    body, k = re.subn(r'frag_color = (_\d+);', r'return \1;', body)
+    assert k == 1
+    return 'highp vec4 _fl_tint(vec4 _fl_c, vec4 _fl_big, highp vec2 _fl_px)\n{\n' + body + '}\n'
+
+
 def sdf_codec(src, samplers):
+    global TINT_FUNC
     if NAME == 'mi_lm_upsample_tint':
+        TINT_FUNC = make_tint_func(src)
         src, k = re.subn(r'    frag_color = (_\d+);\n',
                          r'    frag_color = _fl_out_pass < 0.5 ? vec4(\1.rgb, 1.0) : vec4(vec3(\1.a), 1.0);\n', src)
         assert k == 1
     if NAME == 'mi_glass_v13_f16':
         src, k = re.subn(r'texture\(uRefractTex, ', '_fl_refract(', src)
         assert k == 3
-        src = src.replace('void main()\n', REFRACT_DEC + 'void main()\n', 1)
-        samplers.append('_fl_refractA')
+        src = src.replace('void main()\n', FUSED_REFRACT.replace('@TINT@', TINT_FUNC) + 'void main()\n', 1)
+        samplers += ['_fl_refractA', '_fl_backdrop']
     if NAME == 'mi_glass_sdf':
         src, k = re.subn(r'    outColor = (vec4\(f16vec4\(_\d+\.xy, .*\));\n',
                          lambda m: f'    highp vec4 _fl_s = {m.group(1)};\n' + SDF_ENC, src)

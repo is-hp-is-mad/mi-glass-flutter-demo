@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
@@ -111,11 +112,14 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
       _clearRefract();
       return;
     }
+    // Snap outwards to whole logical px, but never past the boundary: its size is usually fractional
+    // (e.g. 1265.33), and rounding up would add a transparent last column / row that glass touching
+    // the right or bottom edge then refracts as a thin line.
     final snapped = Rect.fromLTRB(
       region.left.floorToDouble(),
       region.top.floorToDouble(),
-      region.right.ceilToDouble(),
-      region.bottom.ceilToDouble(),
+      math.min(region.right.ceilToDouble(), ro.size.width.floorToDouble()),
+      math.min(region.bottom.ceilToDouble(), ro.size.height.floorToDouble()),
     );
     // ignore: invalid_use_of_protected_member
     final layer = ro.layer! as OffsetLayer;

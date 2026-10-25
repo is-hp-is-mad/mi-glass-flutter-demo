@@ -29,8 +29,8 @@ class _DemoAppState extends State<DemoApp> {
     debugShowCheckedModeBanner: false,
     title: 'HyperGlass',
     themeMode: _mode,
-    theme: ThemeData(brightness: Brightness.light),
-    darkTheme: ThemeData(brightness: Brightness.dark),
+    theme: ThemeData(brightness: Brightness.light, fontFamily: 'MiSans'),
+    darkTheme: ThemeData(brightness: Brightness.dark, fontFamily: 'MiSans'),
     builder: (context, child) => RepaintBoundary(key: _root, child: child),
     home: WeatherDemo(
       captureRoot: _root,
@@ -462,7 +462,7 @@ class _SkyPainter extends CustomPainter {
     final tp = TextPainter(
       text: const TextSpan(
         text: '23°',
-        style: TextStyle(color: Colors.white, fontSize: 150, fontWeight: FontWeight.w200),
+        style: TextStyle(fontFamily: 'MiSans', color: Colors.white, fontSize: 150, fontWeight: FontWeight.w200),
       ),
       textDirection: TextDirection.ltr,
     )..layout();

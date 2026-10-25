@@ -56,6 +56,18 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  # MiSans is not committed: run `python tool/fetch_misans.py` first.
+  fonts:
+    - family: MiSans
+      fonts:
+        - asset: assets/fonts/MiSans-ExtraLight.ttf
+          weight: 200
+        - asset: assets/fonts/MiSans-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/MiSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/MiSans-Semibold.ttf
+          weight: 600
   shaders:
     - shaders/mi_glass_sdf.frag
     - shaders/mi_glass_v13_f16.frag

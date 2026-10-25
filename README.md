@@ -28,9 +28,12 @@
 
 ## 快速开始
 
-需要 Flutter 3.35.7（stable）。
+需要 Flutter 3.35.7（stable）和 Python 3。
+
+界面字体统一用小米的 [MiSans](https://hyperos.mi.com/font/)。字体文件不随仓库分发，构建前先用脚本从官网下载需要的 4 个字重（ExtraLight、Regular、Medium、Semibold），放到 `assets/fonts/`：
 
 ```bash
+python tool/fetch_misans.py
 flutter pub get
 flutter run -d windows   # 也可以换成 macos / linux / android / ios
 ```
@@ -88,7 +91,7 @@ HyperBlendBlur(
 
 ## 免责声明
 
-本项目与小米公司没有任何关联。仓库中的 shader 和参数来自对公开发布的系统软件的逆向分析，仅用于学习和研究图形技术。"小米""澎湃 OS""HyperOS"等名称和商标归其权利人所有。如果权利人认为有不妥之处，请提 issue，会及时处理。
+本项目与小米公司没有任何关联。MiSans 字体的版权归小米所有，请按其授权协议使用。仓库中的 shader 和参数来自对公开发布的系统软件的逆向分析，仅用于学习和研究图形技术。"小米""澎湃 OS""HyperOS"等名称和商标归其权利人所有。如果权利人认为有不妥之处，请提 issue，会及时处理。
 
 ## 致谢
 

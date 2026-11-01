@@ -43,6 +43,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: actions/setup-java@v4
+        if: matrix.label == 'android'
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Fetch MiSans (official download, not redistributed)
         shell: bash
         run: |
@@ -111,7 +117,7 @@ jobs:
       - name: 'iOS simulator, debug (the only mode a simulator runs)'
         if: matrix.label == 'ios-sim-debug'
         run: |
-          flutter build ios --simulator --debug
+          flutter build ios --simulator --debug --dart-define=SHOWCASE_PERF=$PWD/ci_out/perf_ios-sim-debug.csv
           bash tool/ci_ios.sh "$PWD/ci_out/perf_ios-sim-debug.csv"
 
       - uses: actions/upload-artifact@v4

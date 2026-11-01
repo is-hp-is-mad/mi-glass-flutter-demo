@@ -108,7 +108,7 @@ jobs:
           working-directory: showcase
           script: bash tool/ci_android.sh $PWD/ci_out/perf_android.csv
 
-      - name: iOS simulator (debug: the only mode a simulator runs)
+      - name: 'iOS simulator, debug (the only mode a simulator runs)'
         if: matrix.label == 'ios-sim-debug'
         run: |
           flutter build ios --simulator --debug

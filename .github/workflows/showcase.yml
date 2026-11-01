@@ -1,0 +1,158 @@
+name: showcase perf
+
+# Runs showcase/ on every platform CI has, in its timed perf mode, and publishes the curves to the perf-results branch:
+# https://github.com/is-hp-is-mad/mi-glass-flutter-demo/tree/perf-results
+on:
+  push:
+    paths:
+      - 'showcase/**'
+      - '.github/workflows/showcase.yml'
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: 3.35.7
+
+defaults:
+  run:
+    working-directory: showcase
+
+jobs:
+  perf:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2022, label: windows }
+          - { os: ubuntu-latest, label: linux }
+          - { os: macos-latest, label: macos }
+          - { os: ubuntu-latest, label: android }
+          - { os: macos-latest, label: ios-sim-debug }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch MiSans (official download, not redistributed)
+        shell: bash
+        run: |
+          curl -fL --retry 8 --retry-all-errors --retry-delay 5 -C - -o "$RUNNER_TEMP/MiSans.zip" https://hyperos.mi.com/font-download/MiSans.zip
+          python tool/fetch_misans.py "$RUNNER_TEMP/MiSans.zip"
+
+      - run: flutter pub get
+      - run: mkdir -p ci_out
+        shell: bash
+
+      - name: Windows
+        if: matrix.label == 'windows'
+        shell: pwsh
+        run: |
+          flutter build windows --release
+          $env:SHOWCASE_PERF = "$PWD\ci_out\perf_windows.csv"
+          $p = Start-Process build\windows\x64\runner\Release\hyper_showcase.exe -PassThru
+          if (-not $p.WaitForExit(960000)) { $p.Kill(); Write-Output 'timed out' }
+
+      - name: Linux
+        if: matrix.label == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev xvfb libgl1-mesa-dri mesa-utils fonts-noto-cjk
+          flutter build linux --release
+          export SHOWCASE_PERF=$PWD/ci_out/perf_linux.csv
+          timeout 960 xvfb-run -a -s "-screen 0 1920x1080x24" build/linux/x64/release/bundle/hyper_glass || true
+
+      - name: macOS
+        if: matrix.label == 'macos'
+        run: |
+          flutter build macos --release
+          export SHOWCASE_PERF=$PWD/ci_out/perf_macos.csv
+          app=$(ls -d build/macos/Build/Products/Release/*.app)
+          "$app/Contents/MacOS/$(basename "$app" .app)" &
+          pid=$!
+          for i in $(seq 1 960); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+          kill $pid 2>/dev/null || true
+
+      - name: Build APK
+        if: matrix.label == 'android'
+        run: |
+          flutter build apk --release --target-platform android-x64 --dart-define=SHOWCASE_PERF=stdout
+
+      - name: Enable KVM
+        if: matrix.label == 'android'
+        working-directory: .
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android emulator
+        if: matrix.label == 'android'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          disable-animations: true
+          working-directory: showcase
+          script: bash tool/ci_android.sh $PWD/ci_out/perf_android.csv
+
+      - name: iOS simulator (debug: the only mode a simulator runs)
+        if: matrix.label == 'ios-sim-debug'
+        run: |
+          flutter build ios --simulator --debug
+          bash tool/ci_ios.sh "$PWD/ci_out/perf_ios-sim-debug.csv"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-${{ matrix.label }}
+          path: showcase/ci_out/
+          if-no-files-found: warn
+
+  publish:
+    needs: perf
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: perf-*
+          path: data
+      - name: Plot
+        working-directory: .
+        run: |
+          pip install matplotlib
+          python showcase/tool/plot_perf.py data site
+          cat site/README.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish to perf-results
+        working-directory: site
+        run: |
+          printf '\nFrom %s, run %s.\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" >> README.md
+          git init -q -b perf-results
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .
+          git commit -qm "perf results for $GITHUB_SHA"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" perf-results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: site/

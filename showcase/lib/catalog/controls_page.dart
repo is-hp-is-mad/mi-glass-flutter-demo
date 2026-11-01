@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../ui/kit.dart';
-import 'app.dart';
 import 'widgets.dart';
 
 /// Each miuix control on its own, sized from the ROM's dimens.
@@ -27,7 +26,7 @@ class _ControlsPageState extends State<ControlsPage> {
   @override
   Widget build(BuildContext context) {
     final dark = OsScope.of(context).dark;
-    final host = CatalogHost.of(context);
+    final overlay = HyperOverlay.of(context);
     const gap = SizedBox(height: 12);
     return PageScaffold(
       title: '控件',
@@ -79,13 +78,13 @@ class _ControlsPageState extends State<ControlsPage> {
         PrefCard(
           padding: const EdgeInsets.all(16),
           children: [
-            HyButton('主要按钮', primary: true, onTap: () => host.toast('主要按钮')),
+            HyButton('主要按钮', primary: true, onTap: () => overlay.toast('主要按钮')),
             gap,
-            HyButton('次要按钮', onTap: () => host.toast('次要按钮')),
+            HyButton('次要按钮', onTap: () => overlay.toast('次要按钮')),
             gap,
             Row(
               children: [
-                HyButton('内联按钮', primary: true, size: HyButtonSize.inline, onTap: () => host.toast('内联按钮')),
+                HyButton('内联按钮', primary: true, size: HyButtonSize.inline, onTap: () => overlay.toast('内联按钮')),
                 const SizedBox(width: 10),
                 HyButton('取消', size: HyButtonSize.inline, onTap: () {}),
                 const Spacer(),
@@ -171,12 +170,61 @@ class _ControlsPageState extends State<ControlsPage> {
               key: _spinKey,
               value: _spinItems[_spin],
               trailing: Icon(Icons.unfold_more_rounded, size: 19, color: Hy.hint(dark)),
-              onTap: () => host.spinner(_spinKey.currentContext!, _spinItems, _spin, (i) => setState(() => _spin = i)),
+              onTap: () => overlay.select(_spinKey.currentContext!, _spinItems, _spin, (i) => setState(() => _spin = i)),
             ),
-            PrefRow('对话框', onTap: () => host.dialog('删除这条笔记？', '删除后可以在最近删除中找回。')),
-            PrefRow('底部面板', onTap: host.sheet),
-            PrefRow('轻提示', onTap: () => host.toast('已保存到相册')),
+            PrefRow('对话框', onTap: () => overlay.dialog('删除这条笔记？', '删除后可以在最近删除中找回。')),
+            PrefRow('底部面板', onTap: () => overlay.sheet(const ShareSheet())),
+            PrefRow('轻提示', onTap: () => overlay.toast('已保存到相册')),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+class ShareSheet extends StatelessWidget {
+  const ShareSheet({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = HyperTheme.isDark(context);
+    final overlay = HyperOverlay.of(context);
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        Text(
+          '分享到',
+          style: TextStyle(color: Hy.text(dark), fontSize: Hy.title4, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 22),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            for (final (l, i, col) in const [
+              ('消息', Icons.chat_bubble_rounded, Color(0xff1a8fe8)),
+              ('邮件', Icons.mail_rounded, Color(0xff3b6ff0)),
+              ('收藏', Icons.star_rounded, Color(0xffff9f1a)),
+              ('更多', Icons.more_horiz_rounded, Color(0xff7b8494)),
+            ])
+              Pressable(
+                onTap: overlay.closeSheet,
+                child: Column(
+                  children: [
+                    AppGlyph(icon: i, colors: [col, col], size: 54),
+                    const SizedBox(height: 6),
+                    Text(
+                      l,
+                      style: TextStyle(color: Hy.sub(dark), fontSize: Hy.subtitle),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        const Spacer(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+          child: SizedBox(width: double.infinity, child: HyperDialogButton('取消', onTap: overlay.closeSheet)),
         ),
       ],
     );

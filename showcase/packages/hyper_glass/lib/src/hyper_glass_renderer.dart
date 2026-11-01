@@ -108,6 +108,9 @@ const _TintSlots _glTint = (
 );
 typedef _Sdf = ({ui.Image a, ui.Image b, double range});
 
+/// Where this package's shaders are bundled in the host app.
+const shaderRoot = 'packages/hyper_glass/';
+
 /// Dart translation of `miglass::Renderer` (port/src/hyper_glass.cpp): the engine's
 /// AcquireGlassBlurTextures / ExecuteLMGaussianBlur / GetOrCreateSdfTexture / MiGlassContents::Render
 /// expressed as offscreen FragmentShader passes. Every image is in physical pixels.
@@ -125,19 +128,27 @@ class HyperGlassRenderer {
     return HyperGlassRenderer._(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
   }
 
+  /// A renderer without waiting, once [load] has finished: a scene built mid-frame can then paint in that frame.
+  static HyperGlassRenderer? get ready {
+    final p = _ready;
+    return p == null ? null : HyperGlassRenderer._(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+  }
+
+  static List<ui.FragmentProgram>? _ready;
+
   static Future<List<ui.FragmentProgram>> _loadPrograms() async {
     final p = await Future.wait([
-      ui.FragmentProgram.fromAsset(MiGlassSdfLayout.asset),
-      ui.FragmentProgram.fromAsset(MiGlassV13F16Layout.asset),
-      ui.FragmentProgram.fromAsset(MiLmBlurLayout.asset),
-      ui.FragmentProgram.fromAsset(MiLmDownsampleLayout.asset),
-      ui.FragmentProgram.fromAsset(MiLmUpsampleTintLayout.asset),
-      ui.FragmentProgram.fromAsset('shaders/mi_blend_blur.frag'),
-      ui.FragmentProgram.fromAsset('shaders/mi_press_light.frag'),
-      ui.FragmentProgram.fromAsset('shaders/mi_bloom_stroke.frag'),
+      ui.FragmentProgram.fromAsset('$shaderRoot${MiGlassSdfLayout.asset}'),
+      ui.FragmentProgram.fromAsset('$shaderRoot${MiGlassV13F16Layout.asset}'),
+      ui.FragmentProgram.fromAsset('$shaderRoot${MiLmBlurLayout.asset}'),
+      ui.FragmentProgram.fromAsset('$shaderRoot${MiLmDownsampleLayout.asset}'),
+      ui.FragmentProgram.fromAsset('$shaderRoot${MiLmUpsampleTintLayout.asset}'),
+      ui.FragmentProgram.fromAsset('${shaderRoot}shaders/mi_blend_blur.frag'),
+      ui.FragmentProgram.fromAsset('${shaderRoot}shaders/mi_press_light.frag'),
+      ui.FragmentProgram.fromAsset('${shaderRoot}shaders/mi_bloom_stroke.frag'),
     ]);
     await HyperGlassRenderer._(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7])._warmUp();
-    return p;
+    return _ready = p;
   }
 
   Future<void> _warmUp() async {
@@ -165,12 +176,17 @@ class HyperGlassRenderer {
         i?.dispose();
       }
     } else {
-      // Skia only uses the SDF pass and the blur offscreen. Its glass and blend shaders are drawn to the
-      // screen, a different GPU pipeline, so warming them offscreen would just compile them twice;
-      // [warmOnscreen] does it inside the first frame instead.
-      await blurred.toByteData();
-      blurred.dispose();
-      await _sdfTexture(96, 96, 24, g.edgePx, g.edgePow).a.toByteData();
+      // Skia uses the SDF pass, the blur and the refract chain offscreen. Its glass and blend shaders are
+      // drawn to the screen, a different GPU pipeline, so warming them offscreen would just compile them
+      // twice; [warmOnscreen] does it inside the first frame instead.
+      final refract = refractTexture(src, g);
+      final wide = lmGaussianBlur(src, 60); // downsample path
+      for (final o in [blurred, refract.rgb, wide, _sdfTexture(96, 96, 24, g.edgePx, g.edgePow).a]) {
+        await o.toByteData();
+      }
+      for (final i in [blurred, refract.rgb, refract.a, wide]) {
+        i?.dispose();
+      }
       _warmImage = src;
     }
     dispose();

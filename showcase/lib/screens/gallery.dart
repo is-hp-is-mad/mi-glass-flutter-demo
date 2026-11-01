@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../hyper_glass.dart';
 import '../ui/art.dart';
 import '../ui/kit.dart';
-import '../ui/morph_menu.dart';
 
 /// Gallery (HyperGalleryUI): tabs 照片 / 相册 / 精选 in a floating glass bar, 4-column photo grid with date
-/// groups, photo page with floating glass bars (GlassOs4Background) and the morphing "more" menu.
+/// groups, photo page with floating glass bars (GlassOs4Background) and the "more" menu.
 class GalleryApp extends StatefulWidget {
   const GalleryApp({super.key, required this.onBack});
   final VoidCallback onBack;
@@ -426,7 +424,7 @@ class PhotoPage extends StatefulWidget {
 }
 
 class _PhotoPageState extends State<PhotoPage> with TickerProviderStateMixin {
-  late final _menu = PopupMotion(this);
+  late final _menu = ArcMotion(this);
   late final _bars = SpringValue(this, value: 1, damping: 0.9, response: 0.3);
   bool _shown = true, _fav = false;
   final _moreKey = GlobalKey();
@@ -470,12 +468,11 @@ class _PhotoPageState extends State<PhotoPage> with TickerProviderStateMixin {
           builder: (context, _) {
             final v = (_bars.value * widget.chrome).clamp(0.0, 1.0);
             final items = [
-              MorphMenuItem('添加到相册', icon: Icons.add_box_outlined, () => _setMenu(false)),
-              MorphMenuItem('设为壁纸', icon: Icons.wallpaper_rounded, () => _setMenu(false)),
-              MorphMenuItem('幻灯片放映', icon: Icons.slideshow_rounded, () => _setMenu(false)),
-              MorphMenuItem('详细信息', icon: Icons.info_outline_rounded, () => _setMenu(false)),
+              HyperMenuItem('添加到相册', icon: Icons.add_box_outlined, () => _setMenu(false)),
+              HyperMenuItem('设为壁纸', icon: Icons.wallpaper_rounded, () => _setMenu(false)),
+              HyperMenuItem('幻灯片放映', icon: Icons.slideshow_rounded, () => _setMenu(false)),
+              HyperMenuItem('详细信息', icon: Icons.info_outline_rounded, () => _setMenu(false)),
             ];
-            const itemH = 52.0;
             return Stack(
               children: [
                 if (v > 0.01) ...[
@@ -539,14 +536,11 @@ class _PhotoPageState extends State<PhotoPage> with TickerProviderStateMixin {
                     ),
                   ),
                 ],
-                MorphMenu(
+                ArcMenu(
                   motion: _menu,
                   anchor: _anchor,
-                  menu: menuRectFor(_anchor, c.biggest, 212, itemH * items.length + 16, growUp: true),
-                  dark: dark,
+                  menu: menuRectFor(_anchor, c.biggest, 200, ArcMenu.heightFor(items.length), growUp: true),
                   items: items,
-                  itemHeight: itemH,
-                  anchorRadius: 24,
                   onDismiss: () => _setMenu(false),
                 ),
               ],

@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../catalog/app.dart';
+import '../catalog/controls_page.dart';
 import '../screens/traits.dart';
 import '../screens/weather.dart';
 import '../ui/kit.dart';
@@ -186,8 +187,10 @@ Future<void> runShots(GlobalKey root, Os os) async {
     await run('settings scroll', () => swing(240));
     tab(1);
     await run('controls scroll', () => swing(240));
-    tab(2);
-    await wait(800);
+    await run('materials open', () async {
+      tab(2);
+      await wait(800);
+    });
     await run('materials scroll', () => swing(240));
     tab(0);
     await run('tab switch', () async {
@@ -199,7 +202,7 @@ Future<void> runShots(GlobalKey root, Os os) async {
     tab(1);
     await run('dialog', () async {
       for (var i = 0; i < 6; i++) {
-        app.dialog('标题', '内容');
+        app.overlay.dialog('标题', '内容');
         await wait(500);
         await tapFraction(0.5, 0.15);
         await wait(500);
@@ -207,7 +210,7 @@ Future<void> runShots(GlobalKey root, Os os) async {
     });
     await run('sheet', () async {
       for (var i = 0; i < 6; i++) {
-        app.sheet();
+        app.overlay.sheet(const ShareSheet());
         await wait(500);
         await tapFraction(0.5, 0.15);
         await wait(500);
@@ -290,6 +293,14 @@ Future<void> runShots(GlobalKey root, Os os) async {
     await tapText(name);
     await wait(1500);
     await shot('2${i}_detail');
+    final more = find((w) => w is Icon && w.icon == Icons.more_horiz);
+    if (more != null) {
+      await tapAt(more);
+      await wait(900);
+      await shot('2${i}_menu');
+      await tapFraction(0.1, 0.5);
+      await wait(800);
+    }
     final back = find((w) => w is Icon && w.icon == Icons.arrow_back_ios_new);
     if (back == null) {
       stderr.writeln('shots: no back on $name');

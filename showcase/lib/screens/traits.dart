@@ -3,9 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-import '../hyper_glass.dart';
 import '../ui/kit.dart';
-import '../ui/morph_menu.dart';
 
 /// One card per trait of the soft glass: left the trait, right the same glass without it. All samples
 /// share one scene over a hard-edged pattern, so differences are not hidden by a soft backdrop.
@@ -20,7 +18,7 @@ typedef _Sample = ({GlassFilter on, GlassFilter off, GlassFx Function(double t)?
 
 class _TraitsAppState extends State<TraitsApp> with TickerProviderStateMixin {
   late final _t = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat();
-  late final _menu = PopupMotion(this);
+  late final _menu = ArcMotion(this);
   final _scroll = ScrollController();
   double _offset = 0;
   ui.Image? _mask;
@@ -253,25 +251,21 @@ class _TraitsAppState extends State<TraitsApp> with TickerProviderStateMixin {
                 const Positioned(left: 0, right: 0, top: 0, child: StatusBar(color: Colors.white)),
                 Positioned.fromRect(
                   rect: anchor,
-                  child: Opacity(
-                    opacity: 1 - menuSwap(_menu.geometry.value),
-                    child: GlassPress(
-                      radius: 32,
-                      onTap: () => _setMenu(true),
-                      bloom: const BloomStroke(),
-                      child: const Icon(Icons.more_horiz, color: Colors.white, size: 26),
-                    ),
+                  child: GlassPress(
+                    radius: 32,
+                    onTap: () => _setMenu(true),
+                    bloom: const BloomStroke(),
+                    child: const Icon(Icons.more_horiz, color: Colors.white, size: 26),
                   ),
                 ),
-                MorphMenu(
+                ArcMenu(
                   motion: _menu,
                   anchor: anchor,
-                  menu: menuRectFor(anchor, c.biggest, 212, 56.0 * 3 + 16, growUp: true),
-                  dark: dark,
+                  menu: menuRectFor(anchor, c.biggest, 260, ArcMenu.heightFor(3), growUp: true),
                   items: [
-                    MorphMenuItem('弹簧变形菜单', icon: Icons.bubble_chart_outlined, () => _setMenu(false)),
-                    MorphMenuItem('展开与收起用两组弹簧', icon: Icons.compare_arrows_rounded, () => _setMenu(false)),
-                    MorphMenuItem('关闭', icon: Icons.close_rounded, () => _setMenu(false)),
+                    HyperMenuItem('弧形弹出菜单', icon: Icons.bubble_chart_outlined, () => _setMenu(false)),
+                    HyperMenuItem('展开与收起用两组弹簧', icon: Icons.compare_arrows_rounded, () => _setMenu(false)),
+                    HyperMenuItem('关闭', icon: Icons.close_rounded, () => _setMenu(false)),
                   ],
                   onDismiss: () => _setMenu(false),
                 ),

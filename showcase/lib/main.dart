@@ -7,13 +7,11 @@ import 'package:flutter/material.dart';
 import 'catalog/app.dart';
 import 'ci/shots_stub.dart' if (dart.library.io) 'ci/shots.dart';
 import 'ci/startup_trace.dart';
-import 'hyper_glass.dart';
 import 'ui/kit.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  limitSkiaResourceCache();
-  await ViewShadow.load();
+  await HyperGlass.init();
   startupTrace();
   runApp(const ShowcaseApp());
 }
@@ -56,6 +54,7 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
       builder: (context, _) => MaterialApp(
         debugShowCheckedModeBanner: false,
         title: '柔光玻璃',
+        themeAnimationDuration: Duration.zero, // the controls read the theme, the pages read Os
         scrollBehavior: const _SpringScroll(),
         themeMode: _os.dark ? ThemeMode.dark : ThemeMode.light,
         theme: ThemeData(brightness: Brightness.light, fontFamily: 'MiSans', splashFactory: NoSplash.splashFactory),

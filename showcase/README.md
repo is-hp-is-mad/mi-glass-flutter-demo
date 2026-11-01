@@ -11,6 +11,8 @@ tab bars, buttons, popups, and all 35 of miuix's named glass tokens over picture
 MiSans is not committed: run `python tool/fetch_misans.py` before building. No Xiaomi image assets are included; the
 wallpapers and photos are drawn in code.
 
+The design itself lives in `packages/hyper_glass`, and this app uses it like any other host. See [PORTING.md](PORTING.md).
+
 ## Where the values come from
 
 | Source | What |

@@ -26,7 +26,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final os = OsScope.of(context);
-    final host = CatalogHost.of(context);
+    final overlay = HyperOverlay.of(context);
     return PageScaffold(
       title: '设置',
       children: [
@@ -35,7 +35,7 @@ class _SettingsPageState extends State<SettingsPage> {
           child: const HyField(hint: '搜索设置项', search: true),
         ),
         PrefCard(
-          children: [PrefRow('小米账号', summary: '云服务、小米云盘、查找设备', onTap: () => host.toast('账号页面仅作展示'))],
+          children: [PrefRow('小米账号', summary: '云服务、小米云盘、查找设备', onTap: () => overlay.toast('账号页面仅作展示'))],
         ),
         PrefCard(
           children: [
@@ -79,7 +79,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 value: Wallpaper.names[os.wallpaper],
                 trailing: Icon(Icons.unfold_more_rounded, size: 19, color: Hy.hint(os.dark)),
                 onTap: () =>
-                    host.spinner(_wallKey.currentContext!, Wallpaper.names, os.wallpaper, (i) => os.update(() => os.wallpaper = i)),
+                    overlay.select(_wallKey.currentContext!, Wallpaper.names, os.wallpaper, (i) => os.update(() => os.wallpaper = i)),
               ),
             ),
             PrefRow(
@@ -89,7 +89,7 @@ class _SettingsPageState extends State<SettingsPage> {
               color: const Color(0xffff6d6d),
               value: _refreshRates[_refresh],
               trailing: Icon(Icons.unfold_more_rounded, size: 19, color: Hy.hint(os.dark)),
-              onTap: () => host.spinner(_refreshKey.currentContext!, _refreshRates, _refresh, (i) => setState(() => _refresh = i)),
+              onTap: () => overlay.select(_refreshKey.currentContext!, _refreshRates, _refresh, (i) => setState(() => _refresh = i)),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -154,17 +154,17 @@ class _SettingsPageState extends State<SettingsPage> {
               '恢复默认设置',
               icon: Icons.restart_alt_rounded,
               color: const Color(0xffff6d6d),
-              onTap: () => host.dialog(
+              onTap: () => overlay.dialog(
                 '恢复默认设置',
                 '所有展示用的选项都会回到初始状态。',
-                onOk: () {
+                onConfirm: () {
                   setState(() {
                     _wlan = true;
                     _bt = false;
                     _bright = 0.65;
                     _font = 0.4;
                   });
-                  host.toast('已恢复默认');
+                  overlay.toast('已恢复默认');
                 },
               ),
             ),

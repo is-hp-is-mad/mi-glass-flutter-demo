@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../hyper_glass.dart';
 import '../screens/gallery.dart';
 import '../screens/lab.dart';
 import '../screens/traits.dart';

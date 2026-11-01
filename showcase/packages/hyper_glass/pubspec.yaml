@@ -1,0 +1,29 @@
+name: hyper_glass
+description: HyperOS 4 soft glass, blend blur, controls and motion for Flutter.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.9.2
+  flutter: '>=3.35.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  shaders:
+    - shaders/mi_blend_blur.frag
+    - shaders/mi_bloom_stroke.frag
+    - shaders/mi_glass_sdf.frag
+    - shaders/mi_glass_v13_f16.frag
+    - shaders/mi_lm_blur.frag
+    - shaders/mi_lm_downsample.frag
+    - shaders/mi_lm_upsample_tint.frag
+    - shaders/mi_press_light.frag
+    - shaders/mi_view_shadow.frag

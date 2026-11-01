@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+import 'hyper_glass_renderer.dart' show shaderRoot;
+
 /// `miuix.theme.token.ShadowToken`. The values reach `View.setMiShadow` unscaled, so they are physical pixels
 /// of a 3x screen.
 class ShadowToken {
@@ -23,9 +25,9 @@ class ViewShadow extends SingleChildRenderObjectWidget {
 
   static ui.FragmentProgram? _program;
 
-  /// Call before the first frame.
+  /// Called by `HyperGlass.init`.
   static Future<void> load() async {
-    _program = await ui.FragmentProgram.fromAsset('shaders/mi_view_shadow.frag');
+    _program = await ui.FragmentProgram.fromAsset('${shaderRoot}shaders/mi_view_shadow.frag');
   }
 
   @override
@@ -50,6 +52,7 @@ class _RenderViewShadow extends RenderProxyBox {
   @override
   void paint(PaintingContext context, Offset offset) {
     final program = ViewShadow._program;
+    assert(program != null, 'ViewShadow needs `await HyperGlass.init()` before runApp');
     if (program != null && opacity > 0.001 && !size.isEmpty) {
       final blur = token.radius / 3;
       // past this the gaussian is under the smoothstep's 0.1 edge

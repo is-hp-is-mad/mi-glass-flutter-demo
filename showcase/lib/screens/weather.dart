@@ -2,10 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../hyper_glass.dart';
 import '../ui/art.dart';
 import '../ui/kit.dart';
-import '../ui/morph_menu.dart';
 
 /// MIUIWeather: every card is the reverse-engineered `ImageFilter.glass` surface on the living sky; the
 /// app's text stays white in both modes, as the original does.
@@ -17,7 +15,7 @@ class WeatherApp extends StatefulWidget {
 }
 
 class _WeatherAppState extends State<WeatherApp> with TickerProviderStateMixin {
-  late final _menu = PopupMotion(this);
+  late final _menu = ArcMotion(this);
   final _scroll = ScrollController();
   double _offset = 0;
 
@@ -202,29 +200,23 @@ class _WeatherAppState extends State<WeatherApp> with TickerProviderStateMixin {
                   SizedBox(
                     width: 40,
                     height: 40,
-                    child: AnimatedBuilder(
-                      animation: _menu.listenable,
-                      builder: (_, c) => Opacity(opacity: 1 - menuSwap(_menu.geometry.value), child: c),
-                      child: GestureDetector(
-                        onTap: () => _setMenu(true),
-                        behavior: HitTestBehavior.opaque,
-                        child: const Icon(Icons.more_horiz, color: Colors.white, size: 24),
-                      ),
+                    child: GestureDetector(
+                      onTap: () => _setMenu(true),
+                      behavior: HitTestBehavior.opaque,
+                      child: const Icon(Icons.more_horiz, color: Colors.white, size: 24),
                     ),
                   ),
                 ],
               ),
               const Positioned(left: 0, right: 0, top: 0, child: StatusBar(color: Colors.white)),
-              MorphMenu(
+              ArcMenu(
                 motion: _menu,
                 anchor: Rect.fromLTWH(c.maxWidth - 52, top + 8, 40, 40),
-                menu: menuRectFor(Rect.fromLTWH(c.maxWidth - 52, top + 8, 40, 40), c.biggest, 212, 56.0 * 3 + 16, growUp: false),
-                dark: dark,
-                anchorRadius: 20,
+                menu: menuRectFor(Rect.fromLTWH(c.maxWidth - 52, top + 8, 40, 40), c.biggest, 200, ArcMenu.heightFor(3), growUp: false),
                 items: [
-                  MorphMenuItem('添加城市', icon: Icons.add_location_alt_outlined, () => _setMenu(false)),
-                  MorphMenuItem('分享天气', icon: Icons.share_outlined, () => _setMenu(false)),
-                  MorphMenuItem(dark ? '浅色模式' : '深色模式', icon: Icons.dark_mode_outlined, () {
+                  HyperMenuItem('添加城市', icon: Icons.add_location_alt_outlined, () => _setMenu(false)),
+                  HyperMenuItem('分享天气', icon: Icons.share_outlined, () => _setMenu(false)),
+                  HyperMenuItem(dark ? '浅色模式' : '深色模式', icon: Icons.dark_mode_outlined, () {
                     _setMenu(false);
                     os.setDark(!dark);
                   }),

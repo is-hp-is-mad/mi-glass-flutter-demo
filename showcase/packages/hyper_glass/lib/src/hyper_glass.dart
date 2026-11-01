@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'blend_material.dart';
 import 'glass_filter.dart';
 import 'hyper_glass_renderer.dart';
+import 'view_shadow.dart';
 
 /// Caps Skia's GPU resource cache (Skia backend only, e.g. Windows / Linux today; a no-op on Impeller).
 ///
@@ -57,20 +58,27 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
   void initState() {
     super.initState();
     _holdFirstFrame();
-    HyperGlassRenderer.load().then((r) {
-      if (!mounted) return;
-      setState(() => _renderer = r);
+    _renderer = HyperGlassRenderer.ready;
+    if (_renderer == null) {
+      HyperGlassRenderer.load().then((r) {
+        if (!mounted) return;
+        setState(() => _renderer = r);
+        _scheduleSnapshot();
+      });
+    } else {
       _scheduleSnapshot();
-    });
+    }
     _ticker = createTicker((_) => _scheduleSnapshot());
     if (widget.animate) _ticker!.start();
   }
 
   bool _shown = true;
+  double _viewDpr = 1;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _viewDpr = MediaQuery.devicePixelRatioOf(context);
     // A hidden page (IndexedStack turns its tickers off) keeps its capture but not the textures derived from it: each
     // glass filter holds screen-sized images. They are rebuilt from the capture on the next paint, so nothing flashes.
     final shown = TickerMode.of(context);
@@ -120,9 +128,61 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
     _pending = true;
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _pending = false;
-      _snapshot();
+      if (!_capturedInPaint) _snapshot();
     });
     SchedulerBinding.instance.ensureVisualUpdate();
+  }
+
+  // A scene whose surfaces are all frosted (menus, dialogs) only needs a heavily blurred backdrop, so
+  // it is captured at 1/4 resolution directly: 1/16 of the texture memory, same frame rate.
+  double get _captureScale => _surfaces.every((g) => g.material is BlendMaterial) ? _blendCaptureScale : 1.0;
+
+  /// Only the area under glass surfaces (plus room for refraction / reflection offsets) is captured and processed.
+  Rect? _captureRegion(RenderRepaintBoundary ro) {
+    Rect? region;
+    for (final g in _surfaces) {
+      if (!g.attached || !g.hasSize) continue;
+      final r = MatrixUtils.transformRect(g.getTransformTo(ro), Offset.zero & g.size);
+      region = region == null ? r : region.expandToInclude(r);
+    }
+    region = region?.inflate(_margin).intersect(Offset.zero & ro.size);
+    if (region == null || region.isEmpty) return null;
+    // Snap outwards to whole logical px, but never past the boundary: its size is usually fractional
+    // (e.g. 1265.33), and rounding up would add a transparent last column / row that glass touching
+    // the right or bottom edge then refracts as a thin line.
+    return Rect.fromLTRB(
+      region.left.floorToDouble(),
+      region.top.floorToDouble(),
+      math.min(region.right.ceilToDouble(), ro.size.width.floorToDouble()),
+      math.min(region.bottom.ceilToDouble(), ro.size.height.floorToDouble()),
+    );
+  }
+
+  bool _capturedInPaint = false;
+
+  /// A surface's first paint with no capture yet, as on a page that was never shown. The background was painted just
+  /// before it in this same frame, so it is captured here and the surface is finished in its first frame.
+  void _captureInPaint() {
+    final ro = _boundary.currentContext?.findRenderObject();
+    if (_renderer == null || ro is! RenderRepaintBoundary || !ro.hasSize || ro.size.isEmpty) return;
+    // ignore: invalid_use_of_protected_member
+    final layer = ro.layer as OffsetLayer?;
+    final region = _captureRegion(ro);
+    final scale = _captureScale;
+    // frosted surfaces (menus, dialogs) fade in, so a frame's wait goes unseen and costs no stall in this frame
+    if (layer == null || region == null || scale < 1) {
+      _scheduleSnapshot();
+      return;
+    }
+    _backdrop = layer.toImageSync(region, pixelRatio: _viewDpr * scale);
+    _region = region;
+    _dpr = _viewDpr;
+    _scale = scale;
+    _capturedInPaint = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _capturedInPaint = false;
+      _releaseFirstFrame();
+    });
   }
 
   void _snapshot() {
@@ -134,42 +194,19 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
     final ro = _boundary.currentContext?.findRenderObject();
     if (ro is! RenderRepaintBoundary || !ro.hasSize || ro.size.isEmpty) return;
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    // A scene whose surfaces are all frosted (menus, dialogs) only needs a heavily blurred backdrop, so
-    // it is captured at 1/4 resolution directly: 1/16 of the texture memory, same frame rate.
-    final scale = _surfaces.every((g) => g.material is BlendMaterial) ? _blendCaptureScale : 1.0;
-    // Only the area under glass surfaces (plus room for refraction / reflection offsets) is captured
-    // and processed.
-    Rect? region;
-    for (final g in _surfaces) {
-      if (!g.attached || !g.hasSize) continue;
-      final r = MatrixUtils.transformRect(g.getTransformTo(ro), Offset.zero & g.size);
-      region = region == null ? r : region.expandToInclude(r);
-    }
-    region = region?.inflate(_margin).intersect(Offset.zero & ro.size);
-    if (region == null || region.isEmpty) {
+    final scale = _captureScale;
+    final snapped = _captureRegion(ro);
+    if (snapped == null) {
       _backdrop?.dispose();
       _backdrop = null;
       _clearRefract();
       _releaseFirstFrame();
       return;
     }
-    // Snap outwards to whole logical px, but never past the boundary: its size is usually fractional
-    // (e.g. 1265.33), and rounding up would add a transparent last column / row that glass touching
-    // the right or bottom edge then refracts as a thin line.
-    final snapped = Rect.fromLTRB(
-      region.left.floorToDouble(),
-      region.top.floorToDouble(),
-      math.min(region.right.ceilToDouble(), ro.size.width.floorToDouble()),
-      math.min(region.bottom.ceilToDouble(), ro.size.height.floorToDouble()),
-    );
     // ignore: invalid_use_of_protected_member
     final layer = ro.layer as OffsetLayer?;
     if (layer == null) {
-      // an offstage page has nothing to capture yet; look again until it is shown
-      _releaseFirstFrame();
-      Timer(const Duration(milliseconds: 200), () {
-        if (mounted) _scheduleSnapshot();
-      });
+      _releaseFirstFrame(); // an offstage page captures in its first paint
       return;
     }
     _inFlight = true;
@@ -289,6 +326,16 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
 class _SceneScope extends InheritedWidget {
   const _SceneScope({required this.state, required super.child});
   final _HyperGlassSceneState state;
+
+  static _HyperGlassSceneState of(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<_SceneScope>();
+    if (scope != null) return scope.state;
+    throw FlutterError(
+      'HyperGlass and HyperBlendBlur need a HyperGlassScene above them, in its child.\n'
+      'Glass samples the background of its scene, so it cannot be used outside one.',
+    );
+  }
+
   @override
   bool updateShouldNotify(_SceneScope old) => old.state != state;
 }
@@ -308,6 +355,12 @@ class HyperGlass extends StatelessWidget {
     this.mask,
     this.child,
   });
+
+  /// Call once before runApp: loads the shadow shader and bounds Skia's GPU cache.
+  static Future<void> init({int skiaCacheMegabytes = 32}) async {
+    await limitSkiaResourceCache(megabytes: skiaCacheMegabytes);
+    await ViewShadow.load();
+  }
 
   final GlassFilter filter;
   final GlassFx fx;
@@ -330,7 +383,7 @@ class HyperGlass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scene = context.dependOnInheritedWidgetOfExactType<_SceneScope>()!.state;
+    final scene = _SceneScope.of(context);
     return Stack(
       fit: StackFit.expand, // the surface's content fills it: icons and rows centre themselves
       children: [
@@ -369,7 +422,7 @@ class HyperBlendBlur extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scene = context.dependOnInheritedWidgetOfExactType<_SceneScope>()!.state;
+    final scene = _SceneScope.of(context);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -480,9 +533,9 @@ class _RenderGlass extends RenderBox {
 
   @override
   void paint(PaintingContext context, Offset offset) {
+    if (_scene._backdrop == null) _scene._captureInPaint();
     final r = _scene._renderer, backdrop = _scene._backdrop;
     final boundary = _scene._boundary.currentContext?.findRenderObject();
-    if (backdrop == null) _scene._scheduleSnapshot(); // shown before its capture existed: take it now
     if (r == null || backdrop == null || boundary is! RenderBox || size.isEmpty) return;
     final dpr = _scene._dpr;
     final origin = (localToGlobal(Offset.zero, ancestor: boundary) - _scene._region.topLeft) * dpr;

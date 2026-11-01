@@ -34,6 +34,8 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  hyper_glass:
+    path: packages/hyper_glass
 
 dev_dependencies:
   flutter_test:
@@ -68,16 +70,6 @@ flutter:
           weight: 500
         - asset: assets/fonts/MiSans-Semibold.ttf
           weight: 600
-  shaders:
-    - shaders/mi_glass_sdf.frag
-    - shaders/mi_glass_v13_f16.frag
-    - shaders/mi_lm_blur.frag
-    - shaders/mi_lm_downsample.frag
-    - shaders/mi_lm_upsample_tint.frag
-    - shaders/mi_blend_blur.frag
-    - shaders/mi_press_light.frag
-    - shaders/mi_bloom_stroke.frag
-    - shaders/mi_view_shadow.frag
 
   # To add assets to your application, add an assets section, like this:
   # assets:

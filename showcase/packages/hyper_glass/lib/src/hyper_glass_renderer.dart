@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+
+import 'package:flutter/scheduler.dart';
 
 import 'blend_material.dart';
 import 'glass_filter.dart';
@@ -218,6 +221,63 @@ class HyperGlassRenderer {
     }
   }
 
+  static final _gen0Shaders = <ui.FragmentShader>[];
+  static final _gen0Images = <ui.Image>[];
+  static final _gen1Shaders = <ui.FragmentShader>[];
+  static final _gen1Images = <ui.Image>[];
+  static bool _deferScheduled = false;
+
+  /// Defers disposal of a [shader] or [image] until after the raster thread has consumed the current frame.
+  /// On Impeller (Android), `Picture.toImageSync` defers GPU realization to the raster thread; disposing a
+  /// shader or intermediate image synchronously inside `paint()` invalidates its handle before rasterization.
+  static void deferDispose({ui.Image? image, ui.FragmentShader? shader}) {
+    if (image != null) _gen0Images.add(image);
+    if (shader != null) _gen0Shaders.add(shader);
+    if (_deferScheduled) return;
+    _deferScheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) => _stepDeferred());
+  }
+
+  static void _stepDeferred() {
+    for (final s in _gen1Shaders) {
+      s.dispose();
+    }
+    _gen1Shaders
+      ..clear()
+      ..addAll(_gen0Shaders);
+    _gen0Shaders.clear();
+    for (final i in _gen1Images) {
+      i.dispose();
+    }
+    _gen1Images
+      ..clear()
+      ..addAll(_gen0Images);
+    _gen0Images.clear();
+    if (_gen1Shaders.isNotEmpty || _gen1Images.isNotEmpty) {
+      Timer(const Duration(milliseconds: 32), () {
+        if (!_deferScheduled) return;
+        _deferScheduled = false;
+        _stepDeferred();
+      });
+    } else {
+      _deferScheduled = false;
+    }
+  }
+
+  static void flushDeferred() {
+    _deferScheduled = false;
+    for (final s in [..._gen1Shaders, ..._gen0Shaders]) {
+      s.dispose();
+    }
+    _gen1Shaders.clear();
+    _gen0Shaders.clear();
+    for (final i in [..._gen1Images, ..._gen0Images]) {
+      i.dispose();
+    }
+    _gen1Images.clear();
+    _gen0Images.clear();
+  }
+
   // One fresh FragmentShader per pass: toImageSync rasterizes later, so uniforms must not be shared.
   static ui.Image _pass(ui.FragmentShader s, int w, int h) {
     s.setFloat(0, w.toDouble());
@@ -232,7 +292,7 @@ class HyperGlassRenderer {
     final pic = rec.endRecording();
     final img = pic.toImageSync(w, h);
     pic.dispose();
-    s.dispose();
+    deferDispose(shader: s);
     return img;
   }
 
@@ -324,7 +384,7 @@ class HyperGlassRenderer {
     if (tint == null && st.factor == 1) {
       // Memory: at factor 1 the plain upsample only adds +-0.0045 dither noise, so its copy is skipped.
       for (final t in temps) {
-        t.dispose();
+        deferDispose(image: t);
       }
       return (rgb: by, a: null);
     }
@@ -343,9 +403,9 @@ class HyperGlassRenderer {
     }
 
     final out = (rgb: upsample(0), a: tint != null ? upsample(1) : null);
-    by.dispose();
+    deferDispose(image: by);
     for (final t in temps) {
-      t.dispose();
+      deferDispose(image: t);
     }
     return out;
   }
@@ -359,8 +419,8 @@ class HyperGlassRenderer {
     final base = blurOrSource(g.refractBlur);
     final reflect = g.blurSourceMode == g.refractBlur.toInt() ? base : blurOrSource(g.baseBlur);
     final tinted = _lmGaussianBlur(reflect, g.baseBlur, tint: g, bigBlur: base);
-    if (!identical(reflect, base) && !identical(reflect, backdrop)) reflect.dispose();
-    if (!identical(base, backdrop)) base.dispose();
+    if (!identical(reflect, base) && !identical(reflect, backdrop)) deferDispose(image: reflect);
+    if (!identical(base, backdrop)) deferDispose(image: base);
     return tinted;
   }
 
@@ -644,7 +704,28 @@ class HyperGlassRenderer {
     int h,
     double radius, {
     double opacity = 1.0,
-  }) => _pass(blendShader(m, blurred, backdropSize, origin, w, h, radius, opacity: opacity), w, h);
+    bool gradientBlur = false,
+    ui.Color? overlayMask,
+    ui.Image? midBlurred,
+    ui.Image? sharpBackdrop,
+  }) => _pass(
+    blendShader(
+      m,
+      blurred,
+      backdropSize,
+      origin,
+      w,
+      h,
+      radius,
+      opacity: opacity,
+      gradientBlur: gradientBlur,
+      overlayMask: overlayMask,
+      midBlurred: midBlurred,
+      sharpBackdrop: sharpBackdrop,
+    ),
+    w,
+    h,
+  );
 
   /// [drawBlend] as a shader, to draw directly over a [w]x[h] rect in physical-pixel local units.
   ui.FragmentShader blendShader(
@@ -656,6 +737,10 @@ class HyperGlassRenderer {
     int h,
     double radius, {
     double opacity = 1.0,
+    bool gradientBlur = false,
+    ui.Color? overlayMask,
+    ui.Image? midBlurred,
+    ui.Image? sharpBackdrop,
   }) {
     final s = _blend.fragmentShader();
     var i = 0;
@@ -679,11 +764,20 @@ class HyperGlassRenderer {
       f(k < m.layers.length ? m.layers[k].mode.index.toDouble() : 0);
     }
     f(opacity);
+    f(gradientBlur ? 1.0 : 0.0);
+    final om = overlayMask ?? const ui.Color(0x00000000);
+    f(om.r);
+    f(om.g);
+    f(om.b);
+    f(om.a);
     s.setImageSampler(0, blurred);
+    s.setImageSampler(1, midBlurred ?? blurred);
+    s.setImageSampler(2, sharpBackdrop ?? blurred);
     return s;
   }
 
   void dispose() {
+    flushDeferred();
     for (final i in _sdfCache.values) {
       i.a.dispose();
       i.b.dispose();

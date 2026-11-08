@@ -7,6 +7,7 @@ import '../screens/weather.dart';
 import '../ui/art.dart';
 import '../ui/kit.dart';
 import 'app.dart';
+import 'render_mode_card.dart';
 import 'widgets.dart';
 
 /// Glass and blend materials over pictures, where they belong: page chrome stays on the plain pages.
@@ -33,6 +34,7 @@ class _MaterialsPageState extends State<MaterialsPage> {
     return PageScaffold(
       title: '材质',
       children: [
+        const RenderModeSwitchSection(includePreview: false),
         const PrefCategory('系统样张'),
         const _Sample(),
         const PrefCategory('玻璃令牌 · GlassToken'),
@@ -221,7 +223,7 @@ class _SampleState extends State<_Sample> {
   @override
   Widget build(BuildContext context) => _Picture(
     wallpaper: 1,
-    height: 336,
+    height: 340,
     child: Padding(
       padding: const EdgeInsets.all(18),
       child: Column(

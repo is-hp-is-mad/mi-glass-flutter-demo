@@ -1,0 +1,74 @@
+name: build android apk
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: 3.35.7
+
+jobs:
+  build-apk:
+    name: Build Universal Android APK & AAR
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch MiSans font
+        working-directory: showcase
+        shell: bash
+        run: |
+          curl -fL --retry 8 --retry-all-errors --retry-delay 5 -C - -o "$RUNNER_TEMP/MiSans.zip" https://hyperos.mi.com/font-download/MiSans.zip
+          python tool/fetch_misans.py "$RUNNER_TEMP/MiSans.zip"
+
+      - name: Flutter pub get & analyze
+        working-directory: showcase
+        run: |
+          flutter pub get
+          flutter analyze
+
+      - name: Build Universal Release APK (小米原生 / 小米移植 / Flutter移植 三合一 Demo)
+        working-directory: showcase
+        run: |
+          flutter build apk --release
+          ls -lh build/app/outputs/flutter-apk/
+
+      - name: Assemble Standalone HyperGlass AAR Library
+        working-directory: showcase/android
+        run: |
+          ./gradlew :hyperglass:assembleRelease
+          ls -lh ../../hyperglass-sdk/hyperglass/build/outputs/aar/ || ls -lh ../build/hyperglass/outputs/aar/ || true
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyper-glass-universal-apk
+          path: showcase/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      - name: Upload Standalone HyperGlass AAR Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyperglass-sdk-aar
+          path: |
+            hyperglass-sdk/hyperglass/build/outputs/aar/*.aar
+            showcase/build/hyperglass/outputs/aar/*.aar
+          if-no-files-found: warn

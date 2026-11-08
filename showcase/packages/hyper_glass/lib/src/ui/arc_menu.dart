@@ -125,11 +125,12 @@ class ArcMenu extends StatelessWidget {
         ],
       ),
     );
-    if (sigma > 0.01)
+    if (sigma > 0.01) {
       content = ImageFiltered(
         imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         child: content,
       );
+    }
     final base = dark ? BlendMaterial.popupMenuDark : BlendMaterial.popupMenuLight;
     return Stack(
       children: [

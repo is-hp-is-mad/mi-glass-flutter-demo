@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import 'package:flutter/widgets.dart';
 import 'blend_material.dart';
 import 'glass_filter.dart';
 import 'hyper_glass_renderer.dart';
+import 'native_rom.dart';
 import 'view_shadow.dart';
 
 /// Caps Skia's GPU resource cache (Skia backend only, e.g. Windows / Linux today; a no-op on Impeller).
@@ -122,20 +124,24 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
 
   bool _pending = false;
   bool _inFlight = false;
+  bool _dirty = false;
 
   void _scheduleSnapshot() {
+    _dirty = true;
     if (_pending) return;
     _pending = true;
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _pending = false;
-      if (!_capturedInPaint) _snapshot();
+      if (!_capturedInPaint || _dirty) _snapshot();
     });
     SchedulerBinding.instance.ensureVisualUpdate();
   }
 
   // A scene whose surfaces are all frosted (menus, dialogs) only needs a heavily blurred backdrop, so
   // it is captured at 1/4 resolution directly: 1/16 of the texture memory, same frame rate.
-  double get _captureScale => _surfaces.every((g) => g.material is BlendMaterial) ? _blendCaptureScale : 1.0;
+  // Progressive gradientBlur surfaces sample the unblurred backdrop at their bottom edge, so they capture at 1.0.
+  double get _captureScale =>
+      _surfaces.every((g) => g.material is BlendMaterial && !g.gradientBlur) ? _blendCaptureScale : 1.0;
 
   /// Only the area under glass surfaces (plus room for refraction / reflection offsets) is captured and processed.
   Rect? _captureRegion(RenderRepaintBoundary ro) {
@@ -209,6 +215,7 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
       _releaseFirstFrame(); // an offstage page captures in its first paint
       return;
     }
+    _dirty = false;
     _inFlight = true;
     layer
         .toImage(snapped, pixelRatio: dpr * scale)
@@ -227,7 +234,7 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
             _clearRefract();
             _frame.value++; // surfaces repaint with the new backdrop
             _releaseFirstFrame();
-            if (widget.animate) _scheduleSnapshot();
+            if (widget.animate || _dirty) _scheduleSnapshot();
           },
           onError: (Object _) {
             _inFlight = false;
@@ -288,13 +295,13 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
     final cut = pic.toImageSync(crop.width.toInt(), crop.height.toInt());
     pic.dispose();
     final tex = r.refractTexture(cut, g.blurScaled(_dpr / 3));
-    cut.dispose(); // still alive in the pictures that read it
+    HyperGlassRenderer.deferDispose(image: cut); // still alive in the pictures that read it
     return _refract[g] = (tex: tex, crop: crop);
   }
 
   static void _dropRefract(_Refract r) {
-    r.tex.rgb.dispose();
-    r.tex.a?.dispose();
+    HyperGlassRenderer.deferDispose(image: r.tex.rgb);
+    HyperGlassRenderer.deferDispose(image: r.tex.a);
   }
 
   @override
@@ -360,6 +367,7 @@ class HyperGlass extends StatelessWidget {
   static Future<void> init({int skiaCacheMegabytes = 32}) async {
     await limitSkiaResourceCache(megabytes: skiaCacheMegabytes);
     await ViewShadow.load();
+    unawaited(hyperRenderController.ensureCapabilitiesLoaded());
   }
 
   final GlassFilter filter;
@@ -384,25 +392,40 @@ class HyperGlass extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scene = _SceneScope.of(context);
-    return Stack(
-      fit: StackFit.expand, // the surface's content fills it: icons and rows centre themselves
-      children: [
-        Positioned.fill(
-          child: _GlassSurface(
-            scene: scene,
-            material: filter,
-            radius: borderRadius,
-            opacity: opacity,
-            fx: fx,
+    return ListenableBuilder(
+      listenable: hyperRenderController,
+      builder: (context, _) {
+        final mode = hyperRenderController.mode;
+        if (defaultTargetPlatform == TargetPlatform.android && mode != HyperRenderMode.flutterPort) {
+          return HyperNativeRomSurface(
+            renderBackend: mode.id,
+            glass: filter,
+            borderRadius: borderRadius,
             bloom: bloom,
-            press: press,
-            pressAt: pressAt,
-            pressOpacity: pressOpacity,
-            mask: mask,
-          ),
-        ),
-        if (child != null) child!,
-      ],
+            child: child,
+          );
+        }
+        return Stack(
+          fit: StackFit.expand, // the surface's content fills it: icons and rows centre themselves
+          children: [
+            Positioned.fill(
+              child: _GlassSurface(
+                scene: scene,
+                material: filter,
+                radius: borderRadius,
+                opacity: opacity,
+                fx: fx,
+                bloom: bloom,
+                press: press,
+                pressAt: pressAt,
+                pressOpacity: pressOpacity,
+                mask: mask,
+              ),
+            ),
+            if (child != null) child!,
+          ],
+        );
+      },
     );
   }
 }
@@ -412,25 +435,65 @@ class HyperGlass extends StatelessWidget {
 /// Inside a [HyperGlassScene] it blurs that scene's background; [material] supplies the blur and
 /// blend layers (see [BlendMaterial]).
 class HyperBlendBlur extends StatelessWidget {
-  const HyperBlendBlur({super.key, required this.material, this.borderRadius = 16, this.opacity = 1, this.bloom, this.child});
+  const HyperBlendBlur({
+    super.key,
+    required this.material,
+    this.borderRadius = 16,
+    this.opacity = 1,
+    this.bloom,
+    this.gradientBlur = false,
+    this.overlayMask,
+    this.child,
+  });
 
   final BlendMaterial material;
   final BloomStroke? bloom;
   final double borderRadius;
   final double opacity;
+
+  /// When true, applies ActionBarContainer's vertical progressive blur (40dp at top -> 0dp sharp at bottom).
+  final bool gradientBlur;
+
+  /// Optional OverlayMaskConfig base colour composited with the ROM's 17-stop alpha curve.
+  final Color? overlayMask;
   final Widget? child;
 
   @override
   Widget build(BuildContext context) {
     final scene = _SceneScope.of(context);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Positioned.fill(
-          child: _GlassSurface(scene: scene, material: material, radius: borderRadius, opacity: opacity, bloom: bloom),
-        ),
-        if (child != null) child!,
-      ],
+    return ListenableBuilder(
+      listenable: hyperRenderController,
+      builder: (context, _) {
+        final mode = hyperRenderController.mode;
+        if (defaultTargetPlatform == TargetPlatform.android && mode != HyperRenderMode.flutterPort) {
+          return HyperNativeRomSurface(
+            renderBackend: mode.id,
+            blend: material,
+            gradientBlur: gradientBlur,
+            overlayMask: overlayMask,
+            borderRadius: borderRadius,
+            bloom: bloom,
+            child: child,
+          );
+        }
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: _GlassSurface(
+                scene: scene,
+                material: material,
+                radius: borderRadius,
+                opacity: opacity,
+                bloom: bloom,
+                gradientBlur: gradientBlur,
+                overlayMask: overlayMask,
+              ),
+            ),
+            if (child != null) child!,
+          ],
+        );
+      },
     );
   }
 }
@@ -447,6 +510,8 @@ class _GlassSurface extends LeafRenderObjectWidget {
     this.pressAt = Offset.zero,
     this.pressOpacity = 0,
     this.mask,
+    this.gradientBlur = false,
+    this.overlayMask,
   });
   final _HyperGlassSceneState scene;
   final Object material; // GlassFilter | BlendMaterial
@@ -457,6 +522,8 @@ class _GlassSurface extends LeafRenderObjectWidget {
   final Offset pressAt;
   final double pressOpacity;
   final ui.Image? mask;
+  final bool gradientBlur;
+  final Color? overlayMask;
 
   @override
   RenderObject createRenderObject(BuildContext context) => _RenderGlass(scene, material, radius, opacity)
@@ -465,7 +532,9 @@ class _GlassSurface extends LeafRenderObjectWidget {
     ..press = press
     ..pressAt = pressAt
     ..pressOpacity = pressOpacity
-    ..mask = mask;
+    ..mask = mask
+    ..gradientBlur = gradientBlur
+    ..overlayMask = overlayMask;
 
   @override
   void updateRenderObject(BuildContext context, _RenderGlass ro) {
@@ -480,6 +549,8 @@ class _GlassSurface extends LeafRenderObjectWidget {
       ..pressAt = pressAt
       ..pressOpacity = pressOpacity
       ..mask = mask
+      ..gradientBlur = gradientBlur
+      ..overlayMask = overlayMask
       ..markNeedsPaint();
   }
 }
@@ -496,6 +567,8 @@ class _RenderGlass extends RenderBox {
   Offset pressAt = Offset.zero;
   double pressOpacity = 0;
   ui.Image? mask;
+  bool gradientBlur = false;
+  Color? overlayMask;
 
   set scene(_HyperGlassSceneState s) {
     if (identical(s, _scene)) return;
@@ -524,8 +597,17 @@ class _RenderGlass extends RenderBox {
 
   @override
   void detach() {
-    _lastShader?.dispose();
+    HyperGlassRenderer.deferDispose(shader: _lastShader, image: _lastImage);
     _lastShader = null;
+    _lastImage = null;
+    for (final s in _overlayShaders) {
+      HyperGlassRenderer.deferDispose(shader: s);
+    }
+    _overlayShaders.clear();
+    for (final img in _overlayImages) {
+      HyperGlassRenderer.deferDispose(image: img);
+    }
+    _overlayImages.clear();
     _scene._frame.removeListener(markNeedsPaint);
     _scene._surfaces.remove(this);
     super.detach();
@@ -571,7 +653,20 @@ class _RenderGlass extends RenderBox {
       } else {
         m as BlendMaterial;
         final extent = _scene._region.size * dpr;
-        shader = r.blendShader(m, _scene.blurredFor(m.sigma)!, extent, origin, w, h, radius * dpr, opacity: opacity);
+        shader = r.blendShader(
+          m,
+          _scene.blurredFor(m.sigma)!,
+          extent,
+          origin,
+          w,
+          h,
+          radius * dpr,
+          opacity: opacity,
+          gradientBlur: gradientBlur,
+          overlayMask: overlayMask,
+          midBlurred: gradientBlur ? _scene.blurredFor(m.sigma * 0.25) : null,
+          sharpBackdrop: gradientBlur ? backdrop : null,
+        );
       }
       canvas
         ..save()
@@ -579,7 +674,7 @@ class _RenderGlass extends RenderBox {
         ..scale(size.width / w, size.height / h); // local units = physical pixels, as the shader expects
       canvas.drawRect(Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()), Paint()..shader = shader);
       canvas.restore();
-      _lastShader?.dispose(); // kept until the next paint so the recorded frame can still use it
+      HyperGlassRenderer.deferDispose(shader: _lastShader); // kept until the next paint so the recorded frame can still use it
       _lastShader = shader;
       _paintOverlays(canvas, r, offset, dpr, w, h);
       return;
@@ -592,7 +687,20 @@ class _RenderGlass extends RenderBox {
       m as BlendMaterial;
       // backdrop extent in output (physical) pixels, whatever resolution it was captured at
       final extent = _scene._region.size * dpr;
-      img = r.drawBlend(m, _scene.blurredFor(m.sigma)!, extent, origin, w, h, radius * dpr, opacity: opacity);
+      img = r.drawBlend(
+        m,
+        _scene.blurredFor(m.sigma)!,
+        extent,
+        origin,
+        w,
+        h,
+        radius * dpr,
+        opacity: opacity,
+        gradientBlur: gradientBlur,
+        overlayMask: overlayMask,
+        midBlurred: gradientBlur ? _scene.blurredFor(m.sigma * 0.25) : null,
+        sharpBackdrop: gradientBlur ? backdrop : null,
+      );
     }
     canvas.drawImageRect(
       img,
@@ -600,16 +708,21 @@ class _RenderGlass extends RenderBox {
       offset & size,
       Paint()..filterQuality = FilterQuality.medium,
     );
-    img.dispose();
+    HyperGlassRenderer.deferDispose(image: _lastImage);
+    _lastImage = img;
     _paintOverlays(canvas, r, offset, dpr, w, h);
   }
 
   /// Bloom stroke and press light, both drawn over the finished surface in physical-pixel local units.
   void _paintOverlays(Canvas canvas, HyperGlassRenderer r, Offset offset, double dpr, int w, int h) {
     for (final s in _overlayShaders) {
-      s.dispose();
+      HyperGlassRenderer.deferDispose(shader: s);
     }
     _overlayShaders.clear();
+    for (final img in _overlayImages) {
+      HyperGlassRenderer.deferDispose(image: img);
+    }
+    _overlayImages.clear();
     final fw = w.toDouble(), fh = h.toDouble();
     final rad = math.min(radius * dpr, math.min(fw, fh) / 2);
     final layers = [
@@ -637,7 +750,7 @@ class _RenderGlass extends RenderBox {
         final img = pic.toImageSync(w, h);
         pic.dispose();
         canvas.drawImage(img, Offset.zero, Paint()..blendMode = mode);
-        img.dispose();
+        _overlayImages.add(img);
       } else {
         canvas.drawRect(
           rect,
@@ -652,5 +765,7 @@ class _RenderGlass extends RenderBox {
   }
 
   final _overlayShaders = <ui.FragmentShader>[];
+  final _overlayImages = <ui.Image>[];
   ui.FragmentShader? _lastShader;
+  ui.Image? _lastImage;
 }

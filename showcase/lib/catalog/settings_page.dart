@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../ui/art.dart';
 import '../ui/kit.dart';
 import 'app.dart';
+import 'render_mode_card.dart';
 import 'widgets.dart';
 
 /// Every kind of preference miuix has, as a settings screen would use them.
@@ -34,6 +35,7 @@ class _SettingsPageState extends State<SettingsPage> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: const HyField(hint: '搜索设置项', search: true),
         ),
+        const RenderModeSwitchSection(includePreview: true),
         PrefCard(
           children: [PrefRow('小米账号', summary: '云服务、小米云盘、查找设备', onTap: () => overlay.toast('账号页面仅作展示'))],
         ),

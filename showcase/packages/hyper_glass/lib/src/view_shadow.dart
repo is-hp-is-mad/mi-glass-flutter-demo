@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
-import 'hyper_glass_renderer.dart' show shaderRoot;
+import 'hyper_glass_renderer.dart' show HyperGlassRenderer, shaderRoot;
 
 /// `miuix.theme.token.ShadowToken`. The values reach `View.setMiShadow` unscaled, so they are physical pixels
 /// of a 3x screen.
@@ -37,7 +37,7 @@ class ViewShadow extends SingleChildRenderObjectWidget {
     ..opacity = opacity;
 
   @override
-  void updateRenderObject(BuildContext context, _RenderViewShadow ro) => ro
+  void updateRenderObject(BuildContext context, RenderObject renderObject) => (renderObject as _RenderViewShadow)
     ..token = token
     ..radius = radius
     ..opacity = opacity
@@ -48,6 +48,7 @@ class _RenderViewShadow extends RenderProxyBox {
   ShadowToken token = ShadowToken.regular;
   double radius = 0, opacity = 1;
   ui.FragmentShader? _shader;
+  ui.Image? _image;
 
   @override
   void paint(PaintingContext context, Offset offset) {
@@ -85,7 +86,8 @@ class _RenderViewShadow extends RenderProxyBox {
         final img = pic.toImageSync(area.width.ceil(), area.height.ceil());
         pic.dispose();
         canvas.drawImage(img, offset + area.topLeft, Paint());
-        img.dispose();
+        HyperGlassRenderer.deferDispose(image: _image);
+        _image = img;
       } else {
         canvas
           ..save()
@@ -93,7 +95,7 @@ class _RenderViewShadow extends RenderProxyBox {
           ..drawRect(Offset.zero & area.size, paint)
           ..restore();
       }
-      _shader?.dispose();
+      HyperGlassRenderer.deferDispose(shader: _shader);
       _shader = s; // the recorded frame still reads it
     }
     super.paint(context, offset);
@@ -101,7 +103,9 @@ class _RenderViewShadow extends RenderProxyBox {
 
   @override
   void dispose() {
-    _shader?.dispose();
+    HyperGlassRenderer.deferDispose(shader: _shader, image: _image);
+    _shader = null;
+    _image = null;
     super.dispose();
   }
 }

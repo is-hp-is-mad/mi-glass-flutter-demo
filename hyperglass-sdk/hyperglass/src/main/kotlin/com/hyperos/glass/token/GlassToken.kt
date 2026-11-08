@@ -429,7 +429,7 @@ class GlassToken @JvmOverloads constructor(
         @JvmField
         val Common_Medium_Regular_Low_Light: GlassToken = fromShaderParams(
             "Common_Medium_Regular_Low_Light",
-            floatArrayOf(0.5f, 1f, 0f, 1f, 0.2f, 2f, 0.2f, 0, 0.6f, 0.8f, 0.04f, 0.9f, 0.9f, 0.9f, 1f, 0f, 1f, 1f, 1f, 60f, 4f, 80f, 600f, 1f, 0.8f, -0.4f, 0.6f, -0.8f, 1.4f, 0.8f, 1.4f, 1f, 3f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
+            floatArrayOf(0.5f, 1f, 0f, 1f, 0.2f, 2f, 0.2f, 0f, 0.6f, 0.8f, 0.04f, 0.9f, 0.9f, 0.9f, 1f, 0f, 1f, 1f, 1f, 60f, 4f, 80f, 600f, 1f, 0.8f, -0.4f, 0.6f, -0.8f, 1.4f, 0.8f, 1.4f, 1f, 3f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
             smallBlurRadius = 36,
             bigBlurRadius = 500
         )

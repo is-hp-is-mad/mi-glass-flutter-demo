@@ -3,8 +3,11 @@ name: build android apk
 on:
   push:
     branches:
-      - '**'
+      - 'showcase-catalog'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 env:
   FLUTTER_VERSION: 3.35.7
@@ -49,19 +52,17 @@ jobs:
         working-directory: showcase
         run: |
           flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/hyper-glass-universal-demo.apk
           ls -lh build/app/outputs/flutter-apk/
-
-      - name: Assemble Standalone HyperGlass AAR Library
-        working-directory: showcase/android
-        run: |
-          ./gradlew :hyperglass:assembleRelease
-          ls -lh ../../hyperglass-sdk/hyperglass/build/outputs/aar/ || ls -lh ../build/hyperglass/outputs/aar/ || true
+          ls -lh build/hyperglass/outputs/aar/ || true
 
       - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: hyper-glass-universal-apk
-          path: showcase/build/app/outputs/flutter-apk/app-release.apk
+          path: |
+            showcase/build/app/outputs/flutter-apk/app-release.apk
+            showcase/build/app/outputs/flutter-apk/hyper-glass-universal-demo.apk
           if-no-files-found: error
 
       - name: Upload Standalone HyperGlass AAR Artifact
@@ -69,6 +70,21 @@ jobs:
         with:
           name: hyperglass-sdk-aar
           path: |
-            hyperglass-sdk/hyperglass/build/outputs/aar/*.aar
             showcase/build/hyperglass/outputs/aar/*.aar
+            hyperglass-sdk/hyperglass/build/outputs/aar/*.aar
           if-no-files-found: warn
+
+      - name: Publish GitHub Release (APK & AAR)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.0.0-universal
+          name: "HyperGlass Universal SDK & 3-Mode Demo APK (小米原生 / 小米移植 / Flutter移植)"
+          body: |
+            ### 交付产物
+            1. **`hyper-glass-universal-demo.apk` / `app-release.apk`**：三合一渲染引擎手动切换 Demo（支持 **小米原生** `xiaomi_native`、**小米移植** `xiaomi_port`、**安卓低版本 Flutter 移植版** `flutter_port` 实时切换对比）。
+            2. **`hyperglass-release.aar`**：彻底脱离小米 ROM 私有框架绑定的全品牌 Android 通用柔光玻璃与混色模糊独立 AAR 库（`com.hyperos.glass`）。
+          files: |
+            showcase/build/app/outputs/flutter-apk/hyper-glass-universal-demo.apk
+            showcase/build/app/outputs/flutter-apk/app-release.apk
+            showcase/build/hyperglass/outputs/aar/hyperglass-release.aar
+        continue-on-error: true

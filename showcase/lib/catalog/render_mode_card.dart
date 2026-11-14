@@ -27,7 +27,7 @@ class _RenderModeSwitchSectionState extends State<RenderModeSwitchSection> {
   static const _portBackends = <(String, String)>[
     ('AUTO', '自动'),
     ('AGSL_RUNTIME_SHADER', 'AGSL(13+)'),
-    ('OPENGL_ES_30', 'GLES3.0(低版)'),
+    ('OPENGL_ES_30', 'GLES 3.0'),
     ('FALLBACK_MASK_ONLY', '安全遮罩'),
   ];
 
@@ -202,6 +202,9 @@ class _RenderModeSwitchSectionState extends State<RenderModeSwitchSection> {
                                       alignment: Alignment.center,
                                       child: Text(
                                         label,
+                                        maxLines: 1,
+                                        softWrap: false,
+                                        overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           color: hyperRenderController.forcedPortBackend == id
                                               ? Colors.white

@@ -44,12 +44,12 @@ object HyperAgslShaders {
         uniform float uRectEdge;
         uniform int uUseSmoothCorner;
 
-        const float SUPERCIRCLE_K = 1.5286649465560913;
-        const float INV_K = 0.6541655897086058;
+        const float SUPERCIRCLE_K = 3.2;
+        const float INV_K = 0.3125;
 
         float supercircleSdf(vec2 p, float r) {
             vec2 q = abs(p) / max(r, 1e-4);
-            float d = pow(pow(max(q.x, 0.0), SUPERCIRCLE_K) + pow(max(q.y, 0.0), SUPERCIRCLE_K), INV_K);
+            float d = pow(pow(max(q.x, 1e-5), SUPERCIRCLE_K) + pow(max(q.y, 1e-5), SUPERCIRCLE_K), INV_K);
             return (d - 1.0) * r;
         }
 
@@ -217,12 +217,12 @@ object HyperAgslShaders {
         uniform float uPressAlpha;
 
         const vec3 LUMA_WEIGHTS = vec3(0.299, 0.587, 0.114);
-        const float SUPERCIRCLE_K = 1.5286649465560913;
-        const float INV_K = 0.6541655897086058;
+        const float SUPERCIRCLE_K = 3.2;
+        const float INV_K = 0.3125;
 
         float supercircleSdf(vec2 p, float r) {
             vec2 q = abs(p) / max(r, 1e-4);
-            float d = pow(pow(max(q.x, 0.0), SUPERCIRCLE_K) + pow(max(q.y, 0.0), SUPERCIRCLE_K), INV_K);
+            float d = pow(pow(max(q.x, 1e-5), SUPERCIRCLE_K) + pow(max(q.y, 1e-5), SUPERCIRCLE_K), INV_K);
             return (d - 1.0) * r;
         }
 
@@ -230,7 +230,7 @@ object HyperAgslShaders {
             vec2 centerToUv = abs(uv - halfSize);
             vec2 q = centerToUv - (halfSize - vec2(radius));
             float rawD = min(max(q.x, q.y), 0.0) - radius;
-            cornerMask = 1.0 - smoothstep(0.0, -1.0, rawD);
+            cornerMask = 1.0 - smoothstep(-1.0, 0.0, rawD);
             if (q.x > 0.0 && q.y > 0.0) {
                 if (uUseSmoothCorner == 1 && radius >= 1.0) {
                     return supercircleSdf(q, radius);
@@ -283,9 +283,9 @@ object HyperAgslShaders {
             vec3 delta = smallRgb - vec3(0.5);
             vec3 sCurve = 1.587 * delta * delta * delta + vec3(0.5);
             vec3 burned = mix(smallRgb, sCurve, clamp(uBurn, 0.0, 1.0));
-            vec3 lightened = min(vec3(1.0), bgAdjusted + uInnerColorWhite);
-            vec3 mixed = mix(burned, lightened, uInnerColorMix);
-            return clamp(mix(mixed, uGlassColor.rgb, uGlassColor.a), 0.0, 1.0);
+            vec3 lightened = mix(bgAdjusted, vec3(1.0), clamp(uInnerColorWhite * 0.25, 0.0, 0.55));
+            vec3 mixed = mix(burned, lightened, clamp(uInnerColorMix * 0.55, 0.0, 1.0));
+            return clamp(mix(mixed, uGlassColor.rgb, clamp(uGlassColor.a * 0.65, 0.0, 1.0)), 0.0, 1.0);
         }
 
         vec3 hsvv(vec3 y) {
@@ -327,7 +327,7 @@ object HyperAgslShaders {
             );
             float edgeFactor = pow(max(1.0 - normalizeSdf, 0.0), max(lightEdgePow, 0.01));
             float lightMask = angleFactor * edgeFactor;
-            float sideIntensity = ndotl < 0.0 ? oppositeIntensity : lightIntensity;
+            float sideIntensity = (ndotl < 0.0 ? oppositeIntensity : lightIntensity) * 0.22;
 
             vec3 lightColor = mix(color, vec3(1.0), clamp(abs(lightDirection.z), 0.0, 1.0));
             return hsvv(color + lightColor * (lightMask * sideIntensity));
@@ -378,8 +378,8 @@ object HyperAgslShaders {
             vec2 reflectVec = 2.0 * normal.z * normal.xy;
             vec2 reflectOffset = reflectVec * (uReflectOffsetPx * (1.0 - normalizeSdf));
             vec3 reflectSample = sampleTintedGlass(fragCoord + reflectOffset);
-            vec3 reflectColor = clamp(reflectSample + vec3(uReflectionLighten * 0.1), 0.0, 1.0);
-            float reflectAmount = clamp(length(reflectVec) * uReflectionStrength, 0.0, 1.0);
+            vec3 reflectColor = clamp(reflectSample + vec3(uReflectionLighten * 0.05), 0.0, 1.0);
+            float reflectAmount = clamp(length(reflectVec) * uReflectionStrength * 0.35, 0.0, 0.55);
             vec3 color = addLight(refractColor, reflectColor, reflectAmount);
 
             // 3. Bottom Inner Glow (`calculateInnerEdgeEffects`)
@@ -452,12 +452,12 @@ object HyperAgslShaders {
         uniform vec2 uGradientSpan;
 
         const vec3 LUMA_WEIGHTS = vec3(0.299, 0.587, 0.114);
-        const float SUPERCIRCLE_K = 1.5286649465560913;
-        const float INV_K = 0.6541655897086058;
+        const float SUPERCIRCLE_K = 3.2;
+        const float INV_K = 0.3125;
 
         float supercircleSdf(vec2 p, float r) {
             vec2 q = abs(p) / max(r, 1e-4);
-            float d = pow(pow(max(q.x, 0.0), SUPERCIRCLE_K) + pow(max(q.y, 0.0), SUPERCIRCLE_K), INV_K);
+            float d = pow(pow(max(q.x, 1e-5), SUPERCIRCLE_K) + pow(max(q.y, 1e-5), SUPERCIRCLE_K), INV_K);
             return (d - 1.0) * r;
         }
 
@@ -631,12 +631,12 @@ object HyperAgslShaders {
         uniform vec4 uLightColor2;
         uniform int uGradientBorder;
 
-        const float SUPERCIRCLE_K = 1.5286649465560913;
-        const float INV_K = 0.6541655897086058;
+        const float SUPERCIRCLE_K = 3.2;
+        const float INV_K = 0.3125;
 
         float supercircleSdf(vec2 p, float r) {
             vec2 q = abs(p) / max(r, 1e-4);
-            float d = pow(pow(max(q.x, 0.0), SUPERCIRCLE_K) + pow(max(q.y, 0.0), SUPERCIRCLE_K), INV_K);
+            float d = pow(pow(max(q.x, 1e-5), SUPERCIRCLE_K) + pow(max(q.y, 1e-5), SUPERCIRCLE_K), INV_K);
             return (d - 1.0) * r;
         }
 

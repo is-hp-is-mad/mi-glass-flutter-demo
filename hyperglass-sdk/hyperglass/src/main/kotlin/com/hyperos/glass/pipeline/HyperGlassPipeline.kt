@@ -334,7 +334,10 @@ class HyperGlassPipeline(private val targetView: View) {
                 // If the user ALSO configured a ColorBlendConfig on top of Glass (e.g. Overlay_Pill),
                 // or if it's pure Glass:
                 shaderPaint.shader = glassShader
+                val save = canvas.save()
+                canvas.clipPath(clipPath)
                 canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), shaderPaint)
+                canvas.restoreToCount(save)
                 shaderPaint.shader = null
 
                 if (activeBlend != null) {
@@ -585,7 +588,10 @@ class HyperGlassPipeline(private val targetView: View) {
                     useSuperellipse = useSuperellipse
                 )
                 bloomPaint.shader = bloomShader
+                val save = canvas.save()
+                canvas.clipPath(clipPath)
                 canvas.drawRect(0f, 0f, w, h, bloomPaint)
+                canvas.restoreToCount(save)
                 bloomPaint.shader = null
                 return
             } catch (_: Throwable) {

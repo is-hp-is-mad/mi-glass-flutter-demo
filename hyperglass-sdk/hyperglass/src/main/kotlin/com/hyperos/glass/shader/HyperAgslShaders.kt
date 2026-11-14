@@ -636,59 +636,66 @@ object HyperAgslShaders {
             return max(q.x, q.y) - radius;
         }
 
+        float roundedBoxSDF(vec2 pos, vec2 size, float r) {
+            r = min(r, min(size.x, size.y));
+            vec2 d = abs(pos) - size + r;
+            return length(max(d, vec2(0.0))) + min(max(d.x, d.y), 0.0) - r;
+        }
+
+        vec3 getBloomNormal(vec2 fragCoord, vec2 halfSize, float sdf, float R) {
+            vec2 xy = fragCoord - floor(halfSize);
+            vec2 xyA = abs(xy);
+            float s = smoothstep(-uNormalWidth, 0.0, sdf);
+            float z = sqrt(max(uNormalWidth * uNormalWidth - s * s, 0.0));
+            vec3 coord = vec3(xyA, -z);
+
+            vec2 corner = halfSize - R;
+            corner.x = min(corner.x, xyA.x);
+            corner.y = min(corner.y, xyA.y);
+
+            vec2 diff = coord.xy - corner.xy;
+            float len = length(diff);
+            vec2 dir = len > 0.0 ? diff / len : vec2(0.0);
+            corner += dir * (R - uNormalWidth);
+
+            if (xyA.x < corner.x || xyA.y < corner.y) {
+                return vec3(0.0, 0.0, -1.0);
+            }
+
+            vec2 signal = vec2(xy.x < 0.0 ? -1.0 : 1.0, xy.y < 0.0 ? -1.0 : 1.0);
+            vec3 n = normalize(coord - vec3(corner, 0.0));
+            n.xy *= signal;
+            return n;
+        }
+
         vec4 main(vec2 fragCoord) {
             vec2 halfSize = uResolution * 0.5;
             float maxRadius = min(halfSize.x, halfSize.y);
             float radius = min(uCornerRadius, maxRadius);
-            float d = evalShapeSdf(fragCoord, halfSize, radius);
-
-            float outerClip = clamp(0.5 - d, 0.0, 1.0);
-            if (outerClip <= 0.001) return vec4(0.0);
-
-            float innerLimit = max(uNormalWidth, uStrokeWidth) + 2.0;
-            if (-d > innerLimit) return vec4(0.0);
-
-            float eps = max(uTexelOffset.x, 1.0);
-            float dx = evalShapeSdf(fragCoord + vec2(eps, 0.0), halfSize, radius)
-                     - evalShapeSdf(fragCoord - vec2(eps, 0.0), halfSize, radius);
-            float dy = evalShapeSdf(fragCoord + vec2(0.0, eps), halfSize, radius)
-                     - evalShapeSdf(fragCoord - vec2(0.0, eps), halfSize, radius);
-            vec2 n2d = normalize(vec2(dx, dy) + vec2(1e-5, 0.0));
-
-            // Stroke rim mask (`uStrokeWidth`)
-            float strokeAlpha = clamp(1.0 - max(-d - uStrokeWidth + 0.5, 0.0), 0.0, 1.0) * outerClip;
-
-            // Inner bevel diffuse normal mask (`uNormalWidth`)
-            float normalFalloff = clamp(1.0 - (-d / max(uNormalWidth, 1.0)), 0.0, 1.0);
-            normalFalloff = normalFalloff * normalFalloff;
-
-            // Light 1 directional lobe
-            vec2 dir1 = normalize(vec2(-cos(uLightDir1.x), -sin(uLightDir1.x)));
-            float l1 = max(dot(n2d, dir1), 0.0) * uLightColor1.a;
-
-            // Light 2 directional lobe (with opposite intensity in uLightDir2.z)
-            vec2 dir2 = normalize(vec2(-cos(uLightDir2.x), -sin(uLightDir2.x)));
-            float ndotl2 = dot(n2d, dir2);
-            float l2 = (ndotl2 >= 0.0 ? ndotl2 : (-ndotl2 * abs(uLightDir2.z))) * uLightColor2.a;
-
-            vec3 baseStroke = uSourceColor.rgb * (uSourceColor.a * strokeAlpha);
-            vec3 bloom1 = uLightColor1.rgb * (l1 * mix(strokeAlpha, normalFalloff, 0.35));
-            vec3 bloom2 = uLightColor2.rgb * (l2 * mix(strokeAlpha, normalFalloff, 0.5));
-
-            vec3 totalRgb = clamp(baseStroke + bloom1 + bloom2, 0.0, 1.0);
-            float totalAlpha = clamp(
-                max(uSourceColor.a * strokeAlpha, max(l1, l2) * max(strokeAlpha, normalFalloff * 0.5)),
-                0.0,
-                1.0
-            ) * outerClip;
-
-            if (uGradientBorder == 1) {
-                float vFade = 1.0 - clamp(fragCoord.y / max(uResolution.y, 1.0), 0.0, 1.0);
-                totalRgb *= vFade;
-                totalAlpha *= vFade;
+            float R = max(radius, uNormalWidth);
+            vec2 xy = abs(fragCoord - halfSize);
+            vec2 centerRect = halfSize - R * 1.6;
+            if (xy.x < centerRect.x && xy.y < centerRect.y) {
+                return vec4(0.0);
             }
 
-            return vec4(totalRgb * totalAlpha, totalAlpha);
+            float glass = evalShapeSdf(fragCoord, halfSize, radius);
+            float outMask = smoothstep(0.0, -1.0, glass);
+            float strokeAlpha = smoothstep(-uStrokeWidth, -uStrokeWidth + 1.0, glass);
+            float stroke = strokeAlpha * strokeAlpha;
+            if (uGradientBorder == 1) {
+                float y = fragCoord.y / max(uResolution.y, 1.0);
+                stroke *= y < 0.35 ? 1.0 - y / 0.35 : (y > 0.68 ? (y - 0.68) / 0.32 : 0.0);
+            }
+            vec3 c = uSourceColor.rgb * uSourceColor.a * stroke;
+
+            vec3 n = getBloomNormal(fragCoord, halfSize, roundedBoxSDF(fragCoord - halfSize, halfSize, radius), R);
+            float light1 = clamp(dot(n, vec3(uLightDir1, 0.0)) * dot(vec3(0.0, -1.0, 0.0), n), 0.0, 1.0);
+            c += uLightColor1.rgb * uLightColor1.a * light1 * light1;
+            float light2 = clamp(dot(n, uLightDir2) * dot(vec3(0.0, 1.0, 0.0), n), 0.0, 1.0);
+            c += uLightColor2.rgb * uLightColor2.a * light2 * light2;
+
+            return vec4(clamp(c, 0.0, 1.0) * outMask, 0.0);
         }
     """
 

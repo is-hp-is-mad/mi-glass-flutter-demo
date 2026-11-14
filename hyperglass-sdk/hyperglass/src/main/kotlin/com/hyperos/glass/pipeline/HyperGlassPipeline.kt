@@ -588,10 +588,12 @@ class HyperGlassPipeline(private val targetView: View) {
                     useSuperellipse = useSuperellipse
                 )
                 bloomPaint.shader = bloomShader
+                bloomPaint.blendMode = android.graphics.BlendMode.PLUS
                 val save = canvas.save()
                 canvas.clipPath(clipPath)
                 canvas.drawRect(0f, 0f, w, h, bloomPaint)
                 canvas.restoreToCount(save)
+                bloomPaint.blendMode = android.graphics.BlendMode.SRC_OVER
                 bloomPaint.shader = null
                 return
             } catch (_: Throwable) {

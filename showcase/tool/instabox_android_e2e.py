@@ -365,18 +365,26 @@ adb shell input tap $((W * 72 / 100)) $((H * 850 / 1000))
 sleep 3
 adb shell screencap -p /data/local/tmp/miglass_showcase_port_materials.png
 adb pull /data/local/tmp/miglass_showcase_port_materials.png {shlex.quote(f'{BOX_OUT_DIR}/showcase_port_materials.png')}
-adb shell input swipe $((W / 2)) $((H * 75 / 100)) $((W / 2)) $((H * 20 / 100)) 600
+adb shell input swipe $((W / 2)) $((H * 75 / 100)) $((W / 2)) $((H * 15 / 100)) 500
 sleep 2
 adb shell screencap -p /data/local/tmp/miglass_showcase_port_sample.png
 adb pull /data/local/tmp/miglass_showcase_port_sample.png {shlex.quote(f'{BOX_OUT_DIR}/showcase_port_sample.png')}
-adb shell input swipe $((W / 2)) $((H * 75 / 100)) $((W / 2)) $((H * 25 / 100)) 600
+adb shell input swipe $((W / 2)) $((H * 75 / 100)) $((W / 2)) $((H * 15 / 100)) 500
 sleep 2
 adb shell screencap -p /data/local/tmp/miglass_showcase_port_tokens.png
 adb pull /data/local/tmp/miglass_showcase_port_tokens.png {shlex.quote(f'{BOX_OUT_DIR}/showcase_port_tokens.png')}
+adb shell input swipe $((W / 2)) $((H * 75 / 100)) $((W / 2)) $((H * 15 / 100)) 500
+sleep 2
+adb shell screencap -p /data/local/tmp/miglass_showcase_port_blend.png
+adb pull /data/local/tmp/miglass_showcase_port_blend.png {shlex.quote(f'{BOX_OUT_DIR}/showcase_port_blend.png')}
 adb shell input tap $((W * 50 / 100)) $((H * 850 / 1000))
 sleep 2
 adb shell screencap -p /data/local/tmp/miglass_showcase_port_controls.png
 adb pull /data/local/tmp/miglass_showcase_port_controls.png {shlex.quote(f'{BOX_OUT_DIR}/showcase_port_controls.png')}
+adb shell input swipe $((W / 2)) $((H * 75 / 100)) $((W / 2)) $((H * 20 / 100)) 500
+sleep 2
+adb shell screencap -p /data/local/tmp/miglass_showcase_port_controls_more.png
+adb pull /data/local/tmp/miglass_showcase_port_controls_more.png {shlex.quote(f'{BOX_OUT_DIR}/showcase_port_controls_more.png')}
 """
 
     run_cmd = f"""

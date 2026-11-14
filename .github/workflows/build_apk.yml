@@ -1,9 +1,6 @@
 name: build android apk
 
 on:
-  push:
-    branches:
-      - 'showcase-catalog'
   workflow_dispatch:
 
 permissions:

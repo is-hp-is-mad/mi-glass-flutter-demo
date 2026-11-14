@@ -3,13 +3,6 @@ name: capture
 # Builds the demo on each desktop OS, runs its scripted capture mode (MIGLASS_CAPTURE=1) and uploads
 # the screenshots plus a frame-time / memory curve as artifacts.
 on:
-  push:
-    paths-ignore:
-      - 'showcase/**'
-      - '.github/workflows/showcase.yml'
-  pull_request:
-    paths-ignore:
-      - 'showcase/**'
   workflow_dispatch:
 
 env:

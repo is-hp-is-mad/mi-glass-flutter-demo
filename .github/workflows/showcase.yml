@@ -3,10 +3,6 @@ name: showcase perf
 # Runs showcase/ on every platform CI has, in its timed perf mode, and publishes the curves to the perf-results branch:
 # https://github.com/is-hp-is-mad/mi-glass-flutter-demo/tree/perf-results
 on:
-  push:
-    paths:
-      - 'showcase/**'
-      - '.github/workflows/showcase.yml'
   workflow_dispatch:
 
 env:

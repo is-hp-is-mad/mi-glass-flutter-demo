@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """InstaBox persistent Android box lifecycle and E2E verification for HyperGlass / mi-glass.
 
-Reuses the persistent InstaBox container pattern from Flutify CI:
-- Reuses a single named persistent InstaBox Android container (`create` as a
-  persistent box, `resume`/`start` on later runs, `suspend` after cleanup).
+Design guarantees:
+- Reuses an existing persistent InstaBox Android container (`resume`/`start` on run,
+  `suspend` after cleanup) without creating extra boxes by default (safe for Free-tier
+  box quotas).
 - Never destroys the container (`instabox rm`) and never uninstalls packages.
+- Redacts emails and API keys from any CLI error output before logging.
 - Installs & launches both the native Android Sample APK (`com.hyperos.glass.sample`)
   and the Flutter Showcase APK (`com.example.hyper_glass`), verifies process
   liveness & zero fatal crashes, captures screenshots + dumpsys gfxinfo + logcat,
@@ -27,6 +29,9 @@ from typing import Any
 BOX_OUT_DIR = "/data/home/miglass_e2e_out"
 BOX_STAGE_DIR = "/data/home/miglass_stage"
 
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_API_KEY_RE = re.compile(r"ibk_[A-Za-z0-9]+")
+
 TARGETS: dict[str, dict[str, str]] = {
     "sample": {
         "name": "HyperGlass Native Sample",
@@ -39,6 +44,15 @@ TARGETS: dict[str, dict[str, str]] = {
         "activity": "com.example.hyper_glass/.MainActivity",
     },
 }
+
+
+def redact_sensitive(text: str) -> str:
+    """Redact email addresses and InstaBox API keys from any log or exception text."""
+    if not text:
+        return text
+    cleaned = _EMAIL_RE.sub("<redacted-email>", text)
+    cleaned = _API_KEY_RE.sub("<redacted-key>", cleaned)
+    return cleaned
 
 
 class Runner:
@@ -65,7 +79,8 @@ class Runner:
         if check and proc.returncode != 0:
             raise RuntimeError(
                 f"Command failed ({proc.returncode}): {' '.join(cmd)}\n"
-                f"stdout: {proc.stdout}\nstderr: {proc.stderr}"
+                f"stdout: {redact_sensitive(proc.stdout)}\n"
+                f"stderr: {redact_sensitive(proc.stderr)}"
             )
         return proc
 
@@ -95,19 +110,24 @@ class Runner:
         )
 
 
-def box_exists_in_listing(raw_output: str, box_name: str) -> bool:
-    """Determine if `box_name` exists from `instabox ls --json` or plain `instabox ls`."""
+def parse_boxes_listing(raw_output: str) -> list[dict[str, str]]:
+    """Parse `instabox ls --json` or plain `instabox ls` into `[{'name': ..., 'template': ...}]`."""
     text = (raw_output or "").strip()
     if not text:
-        return False
+        return []
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
+        boxes: list[dict[str, str]] = []
         for line in text.splitlines():
-            tokens = [tok.strip() for tok in line.split() if tok.strip()]
-            if box_name in tokens:
-                return True
-        return False
+            stripped = line.strip()
+            if not stripped or stripped.lower().startswith(("name", "id", "---")):
+                continue
+            tokens = [tok.strip() for tok in stripped.split() if tok.strip()]
+            if tokens:
+                tpl = "android" if "android" in stripped.lower() else ""
+                boxes.append({"name": tokens[0], "template": tpl})
+        return boxes
 
     items: list[Any] = []
     if isinstance(data, list):
@@ -118,43 +138,79 @@ def box_exists_in_listing(raw_output: str, box_name: str) -> bool:
             if isinstance(val, list):
                 items = val
                 break
+
+    result: list[dict[str, str]] = []
     for item in items:
-        if isinstance(item, str) and item == box_name:
-            return True
-        if isinstance(item, dict):
-            for key in ("name", "id", "box_name"):
-                if item.get(key) == box_name:
-                    return True
-    return False
+        if isinstance(item, str):
+            result.append({"name": item, "template": ""})
+        elif isinstance(item, dict):
+            name = ""
+            for key in ("name", "box_name", "id"):
+                val = item.get(key)
+                if isinstance(val, str) and val:
+                    name = val
+                    break
+            if name:
+                tpl = str(item.get("template") or item.get("image") or "").lower()
+                result.append({"name": name, "template": tpl})
+    return result
 
 
-def ensure_box_ready(runner: Runner, box_name: str) -> str:
-    """Create persistent Android box if missing, else resume/start it and wait for Android boot.
+def box_exists_in_listing(raw_output: str, box_name: str) -> bool:
+    """Determine if `box_name` exists from `instabox ls --json` or plain `instabox ls`."""
+    return any(b["name"] == box_name for b in parse_boxes_listing(raw_output))
 
-    Returns `'created'` or `'reused'`.
-    """
-    exists = False
+
+def resolve_box_name(runner: Runner, requested_box: str) -> tuple[str, bool]:
+    """Resolve the target InstaBox container name from existing boxes without creating one."""
     ls_json = runner.run(["instabox", "ls", "--json"], check=False, timeout=60)
     if ls_json.returncode == 0 and ls_json.stdout.strip():
-        exists = box_exists_in_listing(ls_json.stdout, box_name)
+        boxes = parse_boxes_listing(ls_json.stdout)
     else:
         ls_plain = runner.run(["instabox", "ls"], check=True, timeout=60)
-        exists = box_exists_in_listing(ls_plain.stdout, box_name)
+        boxes = parse_boxes_listing(ls_plain.stdout)
 
-    state = "reused" if exists else "created"
+    if requested_box and requested_box != "auto":
+        if any(b["name"] == requested_box for b in boxes):
+            return requested_box, True
+
+    android_boxes = [b for b in boxes if "android" in b.get("template", "") or "android" in b["name"].lower()]
+    if android_boxes:
+        return android_boxes[0]["name"], True
+    if boxes:
+        return boxes[0]["name"], True
+    return requested_box, False
+
+
+def ensure_box_ready(runner: Runner, box_name: str, *, allow_create: bool = False) -> tuple[str, str]:
+    """Reuse an existing persistent Android box (or create only when `allow_create=True`).
+
+    Returns `(resolved_box_name, 'created' | 'reused')`.
+    """
+    resolved_name, exists = resolve_box_name(runner, box_name)
+
     if not exists:
-        print(f"[instabox] Creating persistent Android box '{box_name}' (no --delete-after)...")
+        if not allow_create:
+            raise RuntimeError(
+                f"No existing InstaBox Android container found (requested '{box_name}'). "
+                "Automatic creation is disabled to protect Free-tier box quota."
+            )
+        if not resolved_name or resolved_name == "auto":
+            resolved_name = "miglass-e2e-android"
+        print(f"[instabox] Creating persistent Android box '{resolved_name}'...")
         runner.run(
-            ["instabox", "create", "--name", box_name, "--template", "android"],
+            ["instabox", "create", "--name", resolved_name, "--template", "android"],
             check=True,
             timeout=300,
         )
+        state = "created"
     else:
-        print(f"[instabox] Reusing persistent Android box '{box_name}'...")
-        res = runner.run(["instabox", "resume", box_name], check=False, timeout=180)
+        print(f"[instabox] Reusing existing Android box '{resolved_name}'...")
+        res = runner.run(["instabox", "resume", resolved_name], check=False, timeout=180)
         if res.returncode != 0:
-            runner.run(["instabox", "start", box_name], check=False, timeout=180)
-        runner.exec_box(box_name, "true", check=True, timeout=120)
+            runner.run(["instabox", "start", resolved_name], check=False, timeout=180)
+        runner.exec_box(resolved_name, "true", check=True, timeout=120)
+        state = "reused"
 
     boot_cmd = """
 set -euo pipefail
@@ -171,8 +227,8 @@ if ! adb devices | grep -qE '\\tdevice$'; then
 fi
 adb devices
 """
-    runner.exec_box(box_name, boot_cmd, check=True, timeout=240)
-    return state
+    runner.exec_box(resolved_name, boot_cmd, check=True, timeout=240)
+    return resolved_name, state
 
 
 def clean_environment(
@@ -182,6 +238,9 @@ def clean_environment(
     suspend: bool = False,
 ) -> None:
     """Clean temporary E2E & staging state on the box without uninstalling apps or destroying the box."""
+    resolved_name, exists = resolve_box_name(runner, box_name)
+    if not exists:
+        return
     stop_cmds = "\n".join(
         f"adb shell am force-stop {shlex.quote(t['package_id'])} >/dev/null 2>&1 || true"
         for t in TARGETS.values()
@@ -192,9 +251,9 @@ set +e
 adb shell rm -f /data/local/tmp/miglass_*.png >/dev/null 2>&1 || true
 rm -rf {shlex.quote(BOX_OUT_DIR)} {shlex.quote(BOX_STAGE_DIR)} >/dev/null 2>&1 || true
 """
-    runner.exec_box(box_name, clean_cmd, check=False, timeout=120)
+    runner.exec_box(resolved_name, clean_cmd, check=False, timeout=120)
     if suspend:
-        runner.run(["instabox", "suspend", box_name], check=False, timeout=120)
+        runner.run(["instabox", "suspend", resolved_name], check=False, timeout=120)
 
 
 def parse_gfxinfo_summary(gfx_text: str) -> dict[str, int | None]:
@@ -252,7 +311,7 @@ def verify_apk_on_box(
         timeout=60,
     )
     runner.run(
-        ["instabox", "cp", "-p", str(apk_path), f"{box_name}:{remote_apk}"],
+        ["instabox", "push", box_name, str(apk_path), remote_apk],
         check=True,
         timeout=180,
     )
@@ -341,14 +400,15 @@ def run_android_e2e(
     sample_apk: Path | None = None,
     showcase_apk: Path | None = None,
     settle_seconds: int = 6,
+    allow_create: bool = False,
     runner: Runner | None = None,
 ) -> dict[str, Any]:
     if not sample_apk and not showcase_apk:
         raise ValueError("At least one of --sample-apk or --showcase-apk must be provided.")
 
     r = runner or Runner()
-    box_state = ensure_box_ready(r, box_name)
-    clean_environment(r, box_name, suspend=False)
+    resolved_box, box_state = ensure_box_ready(r, box_name, allow_create=allow_create)
+    clean_environment(r, resolved_box, suspend=False)
 
     targets_to_run: list[tuple[str, Path]] = []
     if sample_apk:
@@ -357,13 +417,13 @@ def run_android_e2e(
         targets_to_run.append(("showcase", showcase_apk))
 
     raw_results = [
-        verify_apk_on_box(r, box_name, key, apk, settle_seconds=settle_seconds)
+        verify_apk_on_box(r, resolved_box, key, apk, settle_seconds=settle_seconds)
         for key, apk in targets_to_run
     ]
-    _pull_box_out(r, box_name, out_dir)
+    _pull_box_out(r, resolved_box, out_dir)
     evaluated = _evaluate_outputs(out_dir, raw_results)
     metrics: dict[str, Any] = {
-        "box_name": box_name,
+        "box_name": resolved_box,
         "box_state": box_state,
         **evaluated,
     }
@@ -377,14 +437,15 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     run_p = sub.add_parser("run", help="Install & verify APKs on persistent InstaBox Android box.")
-    run_p.add_argument("--box", required=True, help="Persistent InstaBox container name.")
+    run_p.add_argument("--box", default="auto", help="Existing InstaBox container name or 'auto'.")
     run_p.add_argument("--sample-apk", type=Path, default=None, help="Path to HyperGlass sample APK.")
     run_p.add_argument("--showcase-apk", type=Path, default=None, help="Path to Flutter showcase APK.")
     run_p.add_argument("--out-dir", type=Path, required=True, help="Output directory for screenshots & reports.")
     run_p.add_argument("--settle-seconds", type=int, default=6, help="Seconds to wait after launch before screencap.")
+    run_p.add_argument("--allow-create", action="store_true", help="Allow creating a box if none exists.")
 
     clean_p = sub.add_parser("cleanup", help="Clean temporary E2E artifacts and suspend box.")
-    clean_p.add_argument("--box", required=True, help="Persistent InstaBox container name.")
+    clean_p.add_argument("--box", default="auto", help="Existing InstaBox container name or 'auto'.")
 
     args = parser.parse_args(argv)
     if args.command == "cleanup":
@@ -397,6 +458,7 @@ def main(argv: list[str] | None = None) -> int:
         sample_apk=args.sample_apk,
         showcase_apk=args.showcase_apk,
         settle_seconds=args.settle_seconds,
+        allow_create=args.allow_create,
     )
     return 0 if metrics.get("passed") else 1
 

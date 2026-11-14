@@ -27,47 +27,61 @@ class _FakeRunner(ib.Runner):
 
 
 class InstaBoxAndroidE2ETest(unittest.TestCase):
-    def test_ensure_box_ready_creates_when_missing(self):
+    def test_redact_sensitive_strips_emails_and_api_keys(self):
+        raw = "Error for user alice.dev@example.com with key ibk_abc123XYZ999"
+        redacted = ib.redact_sensitive(raw)
+        self.assertNotIn("alice.dev@example.com", redacted)
+        self.assertNotIn("ibk_abc123XYZ999", redacted)
+        self.assertIn("<redacted-email>", redacted)
+        self.assertIn("<redacted-key>", redacted)
+
+    def test_ensure_box_ready_never_creates_by_default(self):
         def handler(cmd):
             if cmd[:2] == ["instabox", "ls"]:
                 return subprocess.CompletedProcess(cmd, 0, stdout='{"boxes": []}', stderr="")
-            if cmd[:2] == ["instabox", "create"]:
-                return subprocess.CompletedProcess(cmd, 0, stdout="created", stderr="")
-            if cmd[:2] == ["instabox", "exec"]:
-                return subprocess.CompletedProcess(cmd, 0, stdout="127.0.0.1:5555\tdevice\n", stderr="")
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         runner = _FakeRunner(handler)
-        state = ib.ensure_box_ready(runner, "miglass-e2e-android")
-        self.assertEqual(state, "created")
-        self.assertTrue(any(c[:2] == ["instabox", "create"] for c in runner.calls))
-        self.assertFalse(any(c[:2] == ["instabox", "rm"] for c in runner.calls))
+        with self.assertRaises(RuntimeError):
+            ib.ensure_box_ready(runner, "auto")
+        self.assertFalse(any(c[:2] == ["instabox", "create"] for c in runner.calls))
 
-    def test_ensure_box_ready_reuses_and_resumes_existing_box(self):
+    def test_ensure_box_ready_auto_picks_existing_android_box(self):
         def handler(cmd):
             if cmd[:2] == ["instabox", "ls"]:
                 return subprocess.CompletedProcess(
-                    cmd, 0, stdout='{"boxes": [{"name": "miglass-e2e-android"}]}', stderr=""
+                    cmd,
+                    0,
+                    stdout='{"boxes": [{"name": "flutify-e2e-android", "template": "android"}]}',
+                    stderr="",
                 )
             if cmd[:2] == ["instabox", "resume"]:
                 return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="already stopped")
             return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
 
         runner = _FakeRunner(handler)
-        state = ib.ensure_box_ready(runner, "miglass-e2e-android")
+        resolved, state = ib.ensure_box_ready(runner, "auto")
+        self.assertEqual(resolved, "flutify-e2e-android")
         self.assertEqual(state, "reused")
-        self.assertTrue(any(c[:2] == ["instabox", "resume"] for c in runner.calls))
-        self.assertTrue(any(c[:2] == ["instabox", "start"] for c in runner.calls))
+        self.assertTrue(any(c[:3] == ["instabox", "resume", "flutify-e2e-android"] for c in runner.calls))
+        self.assertTrue(any(c[:3] == ["instabox", "start", "flutify-e2e-android"] for c in runner.calls))
         self.assertFalse(any(c[:2] == ["instabox", "create"] for c in runner.calls))
         self.assertFalse(any(c[:2] == ["instabox", "rm"] for c in runner.calls))
 
     def test_clean_environment_suspends_without_destroying_or_uninstalling(self):
-        runner = _FakeRunner(lambda cmd: subprocess.CompletedProcess(cmd, 0, stdout="", stderr=""))
-        ib.clean_environment(runner, "miglass-e2e-android", suspend=True)
+        def handler(cmd):
+            if cmd[:2] == ["instabox", "ls"]:
+                return subprocess.CompletedProcess(
+                    cmd, 0, stdout='{"boxes": [{"name": "my-android-box", "template": "android"}]}', stderr=""
+                )
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        runner = _FakeRunner(handler)
+        ib.clean_environment(runner, "auto", suspend=True)
         joined = "\n".join(" ".join(c) for c in runner.calls)
         self.assertNotIn("instabox rm", joined)
         self.assertNotIn("adb uninstall", joined)
-        self.assertIn("instabox suspend miglass-e2e-android", joined)
+        self.assertIn("instabox suspend my-android-box", joined)
 
     def test_run_android_e2e_verifies_both_apks_and_writes_reports(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -81,7 +95,7 @@ class InstaBoxAndroidE2ETest(unittest.TestCase):
             def handler(cmd):
                 if cmd[:2] == ["instabox", "ls"]:
                     return subprocess.CompletedProcess(
-                        cmd, 0, stdout='{"boxes": [{"name": "miglass-e2e-android"}]}', stderr=""
+                        cmd, 0, stdout='{"boxes": [{"name": "existing-android", "template": "android"}]}', stderr=""
                     )
                 if cmd[:2] == ["instabox", "exec"]:
                     shell_cmd = cmd[-1]
@@ -102,7 +116,7 @@ class InstaBoxAndroidE2ETest(unittest.TestCase):
 
             runner = _FakeRunner(handler)
             metrics = ib.run_android_e2e(
-                box_name="miglass-e2e-android",
+                box_name="auto",
                 out_dir=out_dir,
                 sample_apk=sample_apk,
                 showcase_apk=showcase_apk,
@@ -111,6 +125,7 @@ class InstaBoxAndroidE2ETest(unittest.TestCase):
             )
 
             self.assertTrue(metrics["passed"])
+            self.assertEqual(metrics["box_name"], "existing-android")
             self.assertEqual(len(metrics["targets"]), 2)
             self.assertTrue((out_dir / "metrics.json").is_file())
             self.assertTrue((out_dir / "summary.md").is_file())

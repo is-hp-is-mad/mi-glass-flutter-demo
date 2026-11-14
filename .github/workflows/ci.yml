@@ -287,7 +287,7 @@ jobs:
     timeout-minutes: 30
     env:
       INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
-      INSTABOX_NAME: ${{ vars.INSTABOX_ANDROID_BOX || 'miglass-e2e-android' }}
+      INSTABOX_NAME: ${{ vars.INSTABOX_ANDROID_BOX || 'auto' }}
     steps:
       - name: Check INSTABOX_API_KEY secret
         id: check-secret

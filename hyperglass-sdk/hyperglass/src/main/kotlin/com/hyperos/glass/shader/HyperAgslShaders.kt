@@ -608,7 +608,7 @@ object HyperAgslShaders {
         uniform float uNormalWidth;
         uniform vec4 uSourceColor;
         uniform vec2 uTexelOffset;
-        uniform vec2 uLightDir1;
+        uniform vec3 uLightDir1;
         uniform vec4 uLightColor1;
         uniform vec3 uLightDir2;
         uniform vec4 uLightColor2;
@@ -690,7 +690,7 @@ object HyperAgslShaders {
             vec3 c = uSourceColor.rgb * uSourceColor.a * stroke;
 
             vec3 n = getBloomNormal(fragCoord, halfSize, roundedBoxSDF(fragCoord - halfSize, halfSize, radius), R);
-            float light1 = clamp(dot(n, vec3(uLightDir1, 0.0)) * dot(vec3(0.0, -1.0, 0.0), n), 0.0, 1.0);
+            float light1 = clamp(dot(n, uLightDir1) * dot(vec3(0.0, -1.0, 0.0), n), 0.0, 1.0);
             c += uLightColor1.rgb * uLightColor1.a * light1 * light1;
             float light2 = clamp(dot(n, uLightDir2) * dot(vec3(0.0, 1.0, 0.0), n), 0.0, 1.0);
             c += uLightColor2.rgb * uLightColor2.a * light2 * light2;
@@ -838,7 +838,8 @@ object HyperAgslShaders {
         shader.setFloatUniform("uCornerRadius", max(cornerRadiusPx, 0f))
         shader.setIntUniform("uUseSmoothCorner", if (useSuperellipse) 1 else 0)
         shader.setFloatUniform("uStrokeWidth", max(config.strokeWidth * density, 1f))
-        shader.setFloatUniform("uNormalWidth", max(config.normalWidth * density, 1f))
+        val innerBlurDp = if (config.texelOffsetX > 0f) config.texelOffsetX else config.normalWidth
+        shader.setFloatUniform("uNormalWidth", max(innerBlurDp * density, 1f))
         shader.setFloatUniform(
             "uSourceColor",
             config.sourceColorR,
@@ -847,7 +848,7 @@ object HyperAgslShaders {
             config.sourceColorA
         )
         shader.setFloatUniform("uTexelOffset", config.texelOffsetX, config.texelOffsetY)
-        shader.setFloatUniform("uLightDir1", config.light1X, config.light1Y)
+        shader.setFloatUniform("uLightDir1", config.texelOffsetY, config.light1X, config.light1Y)
         shader.setFloatUniform("uLightColor1", config.light1R, config.light1G, config.light1B, config.light1A)
         shader.setFloatUniform("uLightDir2", config.light2X, config.light2Y, config.light2Z)
         shader.setFloatUniform("uLightColor2", config.light2R, config.light2G, config.light2B, config.light2A)

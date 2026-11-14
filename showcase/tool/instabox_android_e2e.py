@@ -357,6 +357,14 @@ def verify_apk_on_box(
 WM_SIZE=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -n 1 || echo "720x1280")
 W=${{WM_SIZE%x*}}
 H=${{WM_SIZE#*x}}
+adb shell input tap $((W * 72 / 100)) $((H * 850 / 1000))
+sleep 2
+adb shell input swipe $((W / 2)) $((H * 75 / 100)) $((W / 2)) $((H * 15 / 100)) 500
+sleep 2
+adb shell screencap -p /data/local/tmp/miglass_showcase_flutter_sample.png
+adb pull /data/local/tmp/miglass_showcase_flutter_sample.png {shlex.quote(f'{BOX_OUT_DIR}/showcase_flutter_sample.png')}
+adb shell input tap $((W * 28 / 100)) $((H * 850 / 1000))
+sleep 2
 adb shell input tap $((W * 50 / 100)) $((H * 555 / 1000))
 sleep 2
 adb shell screencap -p /data/local/tmp/miglass_showcase_port_settings.png

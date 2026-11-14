@@ -179,15 +179,14 @@ class HyperNativeRom {
   static Float32List packBloomStroke(BloomStroke b) {
     final a = Float32List(21);
     a[0] = b.width;
-    a[1] = b.innerBlur;
+    a[1] = 24.0;
     a[2] = b.color.r;
     a[3] = b.color.g;
     a[4] = b.color.b;
     a[5] = b.color.a;
-    a[6] = 1.2;
-    a[7] = 0.2;
-    for (var i = 0; i < 2 && i < b.lightDir1.length; i++) {
-      a[8 + i] = b.lightDir1[i];
+    a[6] = b.innerBlur;
+    for (var i = 0; i < 3 && i < b.lightDir1.length; i++) {
+      a[7 + i] = b.lightDir1[i];
     }
     a[10] = b.lightColor1.r;
     a[11] = b.lightColor1.g;

@@ -253,10 +253,7 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
             // Hybrid-composition PlatformViews (xiaomi_native / xiaomi_port) cannot be rasterized
             // by OffsetLayer.toImage; repaint the boundary into a temporary layer tree without them.
             final root = OffsetLayer();
-            final ctx = _NoPlatformViewContext(root, Offset.zero & ro.size);
-            // ignore: invalid_use_of_protected_member
-            ro.paint(ctx, Offset.zero);
-            ctx.stopRecordingIfNeeded();
+            _NoPlatformViewContext(root, Offset.zero & ro.size).capture(ro);
             root.toImage(snapped, pixelRatio: pixelRatio).then(
               (img) {
                 root.dispose();
@@ -816,6 +813,12 @@ class _RenderGlass extends RenderBox {
 class _NoPlatformViewContext extends PaintingContext {
   _NoPlatformViewContext(this._layer, Rect estimatedBounds) : super(_layer, estimatedBounds);
   final ContainerLayer _layer;
+
+  void capture(RenderObject root) {
+    // ignore: invalid_use_of_protected_member
+    root.paint(this, Offset.zero);
+    stopRecordingIfNeeded();
+  }
 
   @override
   void addLayer(Layer layer) {

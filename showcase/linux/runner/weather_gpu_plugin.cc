@@ -230,7 +230,7 @@ void weather_gpu_plugin_register_with_view(FlView* view) {
   if (!view) return;
   FlEngine* engine = fl_view_get_engine(view);
   FlBinaryMessenger* messenger = fl_engine_get_binary_messenger(engine);
-  FlTextureRegistrar* texture_registrar = fl_view_get_texture_registrar(view);
+  FlTextureRegistrar* texture_registrar = fl_engine_get_texture_registrar(engine);
 
   g_linux_plugin = std::make_unique<LinuxWeatherGpuPlugin>(texture_registrar, messenger);
 }

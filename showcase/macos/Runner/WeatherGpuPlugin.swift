@@ -311,7 +311,7 @@ class WeatherMetalTexture: NSObject, FlutterTexture {
       }
     }
 
-    if self.metalTexture == nil, let ioSurface = CVPixelBufferGetIOSurface(pb) {
+    if self.metalTexture == nil, let ioSurface = CVPixelBufferGetIOSurface(pb)?.takeUnretainedValue() {
       let desc = MTLTextureDescriptor.texture2DDescriptor(
         pixelFormat: .bgra8Unorm,
         width: width,
@@ -434,7 +434,7 @@ public class WeatherGpuPlugin: NSObject, FlutterPlugin {
 
   public static func register(with viewController: FlutterViewController) {
     let messenger = viewController.engine.binaryMessenger
-    let textureRegistry: FlutterTextureRegistry = viewController
+    let textureRegistry: FlutterTextureRegistry = viewController.engine
     let channel = FlutterMethodChannel(name: kChannelName, binaryMessenger: messenger)
     let instance = WeatherGpuPlugin(textureRegistry: textureRegistry, channel: channel)
     channel.setMethodCallHandler { (call, result) in

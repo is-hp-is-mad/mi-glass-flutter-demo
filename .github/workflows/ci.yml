@@ -158,7 +158,7 @@ jobs:
       matrix:
         include:
           - platform: windows
-            os: windows-latest
+            os: windows-2022
             build_cmd: flutter build windows --release
             artifact_name: windows-release-bundle
             artifact_path: showcase/build/windows/x64/runner/Release/

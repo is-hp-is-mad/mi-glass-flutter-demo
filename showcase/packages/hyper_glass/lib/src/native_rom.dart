@@ -307,7 +307,7 @@ class _HyperNativeRomSurfaceState extends State<HyperNativeRomSurface> {
             gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
             hitTestBehavior: PlatformViewHitTestBehavior.transparent,
           ),
-          onCreatePlatformView: (params) => PlatformViewsService.initSurfaceAndroidView(
+          onCreatePlatformView: (params) => PlatformViewsService.initExpensiveAndroidView(
             id: params.id,
             viewType: 'hyper_glass/native_view',
             layoutDirection: TextDirection.ltr,

@@ -232,7 +232,9 @@ class _RenderModeSwitchSectionState extends State<RenderModeSwitchSection> {
                     height: 214,
                     child: HyperGlassScene(
                       animate: os.animatedWallpaper,
-                      background: Wallpaper(index: os.wallpaper, dark: false, animate: os.animatedWallpaper),
+                      wallpaperIndex: os.wallpaper,
+                      dark: dark,
+                      background: Wallpaper(index: os.wallpaper, dark: dark, animate: os.animatedWallpaper),
                       child: Padding(
                         padding: const EdgeInsets.all(14),
                         child: Column(

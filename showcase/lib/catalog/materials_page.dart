@@ -165,6 +165,7 @@ class _PictureState extends State<_Picture> with AutomaticKeepAliveClientMixin {
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final dark = OsScope.of(context).dark;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: ClipRRect(
@@ -173,7 +174,9 @@ class _PictureState extends State<_Picture> with AutomaticKeepAliveClientMixin {
           height: widget.height,
           child: HyperGlassScene(
             animate: false,
-            background: Wallpaper(index: widget.wallpaper, dark: false, animate: false),
+            wallpaperIndex: widget.wallpaper,
+            dark: dark,
+            background: Wallpaper(index: widget.wallpaper, dark: dark, animate: false),
             child: widget.child,
           ),
         ),

@@ -30,13 +30,24 @@ typedef _Refract = ({RefractTexture tex, Rect crop});
 /// every frame; that snapshot plays the role of the engine's backdrop texture. [child] holds
 /// [HyperGlass] widgets (anywhere in its subtree).
 class HyperGlassScene extends StatefulWidget {
-  const HyperGlassScene({super.key, required this.background, required this.child, this.animate = true});
+  const HyperGlassScene({
+    super.key,
+    required this.background,
+    required this.child,
+    this.animate = true,
+    this.wallpaperIndex = 1,
+    this.dark = false,
+  });
 
   final Widget background;
   final Widget child;
 
   /// Re-snapshot every frame (animated backgrounds). When false, only on rebuild/resize.
   final bool animate;
+
+  /// Procedural wallpaper index & theme forwarded to [HyperNativeRomSurface] on Android.
+  final int wallpaperIndex;
+  final bool dark;
 
   @override
   State<HyperGlassScene> createState() => _HyperGlassSceneState();
@@ -405,6 +416,8 @@ class HyperGlass extends StatelessWidget {
             glass: filter,
             borderRadius: borderRadius,
             bloom: bloom,
+            wallpaperIndex: scene.widget.wallpaperIndex,
+            dark: scene.widget.dark,
             child: child,
           );
         }
@@ -481,6 +494,8 @@ class HyperBlendBlur extends StatelessWidget {
             overlayMask: overlayMask,
             borderRadius: borderRadius,
             bloom: bloom,
+            wallpaperIndex: scene.widget.wallpaperIndex,
+            dark: scene.widget.dark,
             child: child,
           );
         }

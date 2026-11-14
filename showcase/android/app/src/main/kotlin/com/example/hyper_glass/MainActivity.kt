@@ -505,8 +505,20 @@ private class XiaomiNativeSurfaceView(context: Context) : View(context) {
     private var cornerRadiusPx = 0f
     private var fallbackArgb = 0x4DFFFFFF
 
+    init {
+        setBackgroundColor(Color.TRANSPARENT)
+        setWillNotDraw(false)
+        outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, cornerRadiusPx)
+            }
+        }
+    }
+
     fun applyRomParams(params: Map<String, Any?>, radiusDp: Float) {
         cornerRadiusPx = radiusDp * density
+        clipToOutline = cornerRadiusPx > 0f
+        invalidateOutline()
         val mode = params["mode"] as? String ?: "glass"
 
         if (!XiaomiRomReflector.isSupportGlass) {
@@ -526,14 +538,14 @@ private class XiaomiNativeSurfaceView(context: Context) : View(context) {
         when (mode) {
             "glass" -> {
                 val glassParams = params["glassParams"] as? FloatArray ?: return
-                val smallPx = (((params["smallBlur"] as? Number)?.toFloat() ?: 36f) * density).roundToInt()
-                val bigPx = (((params["bigBlur"] as? Number)?.toFloat() ?: 500f) * density).roundToInt()
+                val smallRadius = (params["smallBlur"] as? Number)?.toInt() ?: 36
+                val bigRadius = (params["bigBlur"] as? Number)?.toInt() ?: 500
                 runCatching {
                     XiaomiRomReflector.setMiViewMaterialType?.invoke(this, 1)
                     XiaomiRomReflector.setMiBackgroundBlurMode?.invoke(this, 1)
                     XiaomiRomReflector.setMiViewBlurMode?.invoke(this, 1)
                     XiaomiRomReflector.setMiBackgroundBlurType?.invoke(this, 0)
-                    XiaomiRomReflector.setMiGlassBlurRadius?.invoke(this, smallPx, bigPx)
+                    XiaomiRomReflector.setMiGlassBlurRadius?.invoke(this, smallRadius, bigRadius)
                     XiaomiRomReflector.setMiGlass?.invoke(this, glassParams)
                 }
             }

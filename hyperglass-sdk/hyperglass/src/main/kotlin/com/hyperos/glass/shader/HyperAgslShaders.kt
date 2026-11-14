@@ -250,17 +250,11 @@ object HyperAgslShaders {
 
         vec3 adjustColor(vec3 color, float saturation, float brightness) {
             float luma = dot(color, LUMA_WEIGHTS);
-            return clamp(mix(vec3(luma), color, saturation) + brightness, 0.0, 1.0);
+            return color * saturation + vec3(luma) * (1.0 - saturation) + vec3(brightness);
         }
 
-        vec3 applyLuminanceCurve(vec3 color, vec4 curve, float amount) {
-            if (abs(amount) <= 0.001) return color;
-            vec3 c = clamp(color, 0.0, 1.0);
-            vec3 poly = ((curve.x * c + curve.y) * c + curve.z) * c + curve.w;
-            return mix(color, poly, amount);
-        }
-
-        vec3 sampleTintedGlass(vec2 localCoord) {
+        // Exact `_fl_tint` from HyperOS firmware (`mi_glass_v13_f16.frag`)
+        vec4 sampleTintedGlass(vec2 localCoord) {
             vec2 backdropCoord = (localCoord + uBackdropOffset) * uBackdropScale;
             backdropCoord = clamp(backdropCoord, vec2(0.5), max(uBackdropSize - vec2(0.5), vec2(0.5)));
 
@@ -271,66 +265,56 @@ object HyperAgslShaders {
             vec3 smallRgb = rawSmall.rgb * invAS;
             vec3 bigRgb = rawBig.rgb * invAB;
 
-            float luma = dot(smallRgb, LUMA_WEIGHTS);
-            float darkerFactor = smoothstep(uDarkerRange.x, uDarkerRange.y, luma) * uDarker;
-            smallRgb -= smallRgb * darkerFactor;
-            smallRgb = applyLuminanceCurve(smallRgb, uLuminanceCurve, uLuminanceAmount);
+            const vec3 darkTint = vec3(0.07874, 0.02848, 0.09278);
+            smallRgb = mix(smallRgb, darkTint, uDarker * smoothstep(uDarkerRange.x, uDarkerRange.y, dot(smallRgb, LUMA_WEIGHTS)));
+            float sLuma = clamp(dot(smallRgb, LUMA_WEIGHTS), 0.0, 1.0);
+            float poly = (((uLuminanceCurve.x * sLuma + uLuminanceCurve.y) * sLuma + uLuminanceCurve.z) * sLuma + uLuminanceCurve.w);
+            smallRgb = mix(smallRgb, vec3(clamp(poly, 0.0, 1.0)), uLuminanceAmount);
             smallRgb = adjustColor(smallRgb, uSaturation, uBrightness);
 
-            vec3 bgAdjusted = clamp(adjustColor(bigRgb, uBgColorSaturation, uBgColorBrightness), 0.0, 1.0);
-            // Cubic S-curve tone polynomial in place of the color-burn division, which
-            // drove low channels to zero over a saturated backdrop (sky blue -> electric blue).
-            vec3 delta = smallRgb - vec3(0.5);
-            vec3 sCurve = 1.587 * delta * delta * delta + vec3(0.5);
-            vec3 burned = mix(smallRgb, sCurve, clamp(uBurn, 0.0, 1.0));
-            vec3 lightened = mix(bgAdjusted, vec3(1.0), clamp(uInnerColorWhite * 0.25, 0.0, 0.55));
-            vec3 mixed = mix(burned, lightened, clamp(uInnerColorMix * 0.55, 0.0, 1.0));
-            return clamp(mix(mixed, uGlassColor.rgb, clamp(uGlassColor.a * 0.65, 0.0, 1.0)), 0.0, 1.0);
+            bigRgb = mix(bigRgb, darkTint, uDarker * smoothstep(uDarkerRange.x, uDarkerRange.y, dot(bigRgb, LUMA_WEIGHTS)));
+            vec3 bg = mix(adjustColor(bigRgb, uBgColorSaturation, uBgColorBrightness), vec3(1.0), uInnerColorWhite);
+
+            float bgLum = clamp(dot(bg, LUMA_WEIGHTS), 0.0, 1.0);
+            float d = pow(max(bgLum, 0.0), max(uBurn, 0.01)) - 0.5;
+            float weight = 0.8 * mix(bgLum, 1.0, 1.587 * d * d * d + 0.5);
+            vec3 inner = mix(vec3(1.0), bg, weight);
+            vec3 avg = vec3(dot(inner, vec3(0.33333334)));
+            vec3 tinted = mix(mix(avg, inner, smoothstep(0.0, 0.4, length(bg - avg))), uGlassColor.rgb, uGlassColor.a);
+
+            float mixW = uInnerColorMix * weight;
+            vec3 outRgb = clamp(tinted * mix(smallRgb, vec3(1.0), mixW), 0.0, 1.0);
+            float outA = clamp((1.0 - uLuminanceAmount) * dot(tinted, LUMA_WEIGHTS) * (1.0 - mixW), 0.0, 1.0);
+            return vec4(outRgb, outA);
         }
 
-        vec3 hsvv(vec3 y) {
-            float maxc = max(max(y.r, y.g), y.b);
-            if (maxc > 1.0) {
-                float minc = min(min(y.r, y.g), y.b);
-                if (minc >= 1.0) return vec3(1.0);
-                float invSpan = 1.0 / max(maxc - minc, 1e-4);
-                float excess = maxc - 1.0;
-                y -= (maxc - y) * invSpan * excess;
-                y -= vec3(maxc - 1.0);
-            }
-            return clamp(y, 0.0, 1.0);
+        float evalCurvedBevelD(vec2 p, vec2 halfSize, float radius, float edgePx, float edgePow) {
+            float dummy = 0.0;
+            float d = evalShapeSdf(p, halfSize, radius, dummy);
+            if (d < -edgePx) return -edgePx;
+            if (d >= 0.0) return d;
+            float t = (-d) / edgePx;
+            if (t >= 0.85) return -edgePx;
+            float s = clamp(mix(0.5, 1.0, pow(clamp(t, 0.0, 1.0), 0.5)), 0.0, 1.0);
+            float sm = ((s * s * s) * (s * (s * 6.0 - 15.0) + 10.0) - 0.5) * 2.0;
+            return -(1.0 - pow(1.0 - sm, edgePow)) * edgePx;
         }
 
-        vec3 addLight(vec3 base, vec3 blend, float intensity) {
-            return hsvv(base + blend * intensity);
-        }
-
-        vec3 processLighting(
-            vec3 color,
-            vec3 normal,
-            vec3 lightDirection,
-            float lightIntensity,
-            float oppositeIntensity,
-            float lightAngleRange,
-            float lightEdgePow,
-            float cornerMask,
-            float normalizeSdf
-        ) {
-            vec2 dir2d = normalize(lightDirection.xy + vec2(1e-5, 0.0));
-            vec2 n2d = normalize(normal.xy + vec2(1e-5, 0.0));
-            float ndotl = dot(n2d, dir2d);
-            float dirFactor = clamp(abs(ndotl), 0.0, 1.0);
-            float angleFactor = mix(
-                dirFactor,
-                smoothstep(max(1.0 - lightAngleRange, 0.001), 1.0, dirFactor),
-                cornerMask
-            );
-            float edgeFactor = pow(max(1.0 - normalizeSdf, 0.0), max(lightEdgePow, 0.01));
-            float lightMask = angleFactor * edgeFactor;
-            float sideIntensity = (ndotl < 0.0 ? oppositeIntensity : lightIntensity) * 0.22;
-
-            vec3 lightColor = mix(color, vec3(1.0), clamp(abs(lightDirection.z), 0.0, 1.0));
-            return hsvv(color + lightColor * (lightMask * sideIntensity));
+        vec3 applyDirectionalLight(vec3 color, vec3 normal) {
+            vec3 nFlip = vec3(normal.x, -normal.y, normal.z);
+            vec3 dir = normalize(uLightDirection);
+            float ndotl = dot(nFlip, dir);
+            float reflDot = 2.0 * normal.z * dir.z - ndotl;
+            float invRange = 1.0 / (3.14159265 * max(uLightAngleRange, 0.01));
+            float ang1 = acos(clamp(ndotl, -1.0, 1.0));
+            float ang2 = acos(clamp(reflDot, -1.0, 1.0));
+            float lightVal = max(ndotl, 0.0) * max(uLightIntensity * (1.0 - ang1 * invRange), 0.0)
+                           + max(reflDot, 0.0) * max(uLightOpposite * (1.0 - ang2 * invRange), 0.0);
+            float luma = dot(color, LUMA_WEIGHTS);
+            float s = smoothstep(0.0, 0.5, luma);
+            float gain = 1.0 + smoothstep(0.0, 1.0, (lightVal * 2.0) * (luma * (0.5 + 0.5 * smoothstep(0.2, 1.0, distance(vec3(1.0), color)))))
+                             * mix(0.75, 0.4, s);
+            return color * gain + vec3(mix(1.0 - luma, luma, s) * (gain - 1.0));
         }
 
         vec4 main(vec2 fragCoord) {
@@ -339,78 +323,73 @@ object HyperAgslShaders {
             float radius = min(uCornerRadius, maxRadius);
 
             float cornerMask = 0.0;
-            float d = evalShapeSdf(fragCoord, halfSize, radius, cornerMask);
-            float shapeMask = clamp(0.5 - d, 0.0, 1.0);
+            float rawD = evalShapeSdf(fragCoord, halfSize, radius, cornerMask);
+            float shapeMask = clamp(0.5 - rawD, 0.0, 1.0);
             if (shapeMask <= 0.001) {
                 return vec4(0.0);
             }
 
             float rectEdge = max(min(uEdgePx, maxRadius), 1.0);
-            float normalizeSdf = clamp(-d / rectEdge, 0.0, 1.0);
+            float curvedD = evalCurvedBevelD(fragCoord, halfSize, radius, rectEdge, uEdgePow);
+            float normalizeSdf = clamp(-curvedD / rectEdge, 0.0, 1.0);
+            float edgeFalloff = 1.0 - normalizeSdf;
 
-            // Compute 2D SDF gradient & glass bevel normal (aligned with mi_glass_v13_f16.frag)
-            float eps = 1.5;
-            float dummy = 0.0;
-            float dx = evalShapeSdf(fragCoord + vec2(eps, 0.0), halfSize, radius, dummy)
-                     - evalShapeSdf(fragCoord - vec2(eps, 0.0), halfSize, radius, dummy);
-            float dy = evalShapeSdf(fragCoord + vec2(0.0, eps), halfSize, radius, dummy)
-                     - evalShapeSdf(fragCoord - vec2(0.0, eps), halfSize, radius, dummy);
-            vec2 grad = normalize(vec2(dx, dy) + vec2(1e-5, 0.0));
-            float bevelWeight = pow(max(1.0 - normalizeSdf, 0.0), max(uEdgePow, 0.01));
-            vec3 normal = normalizeSdf >= 1.0
-                ? vec3(0.0, 0.0, -1.0)
-                : normalize(vec3(grad * bevelWeight, 1.0));
+            float rawT = clamp(-rawD / rectEdge, 0.0, 1.0);
+            float edgeSmooth = 1.0;
+            if (rawT < 0.85) {
+                float s = clamp(mix(0.5, 1.0, pow(rawT, 0.5)), 0.0, 1.0);
+                edgeSmooth = ((s * s * s) * (s * (s * 6.0 - 15.0) + 10.0) - 0.5) * 2.0;
+            }
 
-            // 1. Lens Refraction (`uvToRefractLens`)
+            // Unnormalized derivative of curvedD (matches mi_glass_sdf.frag -> mi_glass_v13_f16.frag)
+            vec3 normal;
+            if (curvedD <= -rectEdge) {
+                normal = vec3(0.0, 0.0, -1.0);
+            } else {
+                float dx = (evalCurvedBevelD(fragCoord + vec2(1.0, 0.0), halfSize, radius, rectEdge, uEdgePow)
+                          - evalCurvedBevelD(fragCoord - vec2(1.0, 0.0), halfSize, radius, rectEdge, uEdgePow)) * 0.5;
+                float dy = (evalCurvedBevelD(fragCoord + vec2(0.0, 1.0), halfSize, radius, rectEdge, uEdgePow)
+                          - evalCurvedBevelD(fragCoord - vec2(0.0, 1.0), halfSize, radius, rectEdge, uEdgePow)) * 0.5;
+                normal = normalize(vec3(dx, dy, 1.0));
+            }
+
+            // 1. Lens Refraction
             vec2 refractOffset = vec2(0.0);
             if (normalizeSdf < 1.0) {
-                float ior = max(uRefractIOR - uHit * 0.2, 1.01);
+                float ior = max(uRefractIOR + 0.2 * uHit, 1.01);
                 vec3 refractVec = refract(vec3(0.0, 0.0, -1.0), normal, 1.0 / ior);
-                float lensDepth = mix(
-                    max(uThicknessPx - rectEdge, 0.0) * 2.0,
-                    uThicknessPx * 2.0,
-                    normalizeSdf
-                );
-                refractOffset = refractVec.xy * min(lensDepth, max(rectEdge * 1.5, 16.0));
+                float lensDepth = mix((uThicknessPx - rectEdge) * 2.0, uThicknessPx * 2.0, normalizeSdf);
+                refractOffset = refractVec.xy * lensDepth;
             }
-            vec3 refractColor = sampleTintedGlass(fragCoord + refractOffset);
+            vec4 refractSample = sampleTintedGlass(fragCoord + refractOffset);
 
-            // 2. Edge Reflection (`calculateReflection` - mix rather than additive rim glow)
-            vec3 color = refractColor;
-            if (normalizeSdf < 1.0) {
-                float edgeMask = 1.0 - smoothstep(0.0, 0.85, normalizeSdf);
+            // 2. Edge Reflection
+            vec3 color = refractSample.rgb;
+            if (edgeFalloff > 0.0001) {
                 vec2 reflectVec = 2.0 * normal.z * normal.xy;
-                vec2 reflectOffset = reflectVec * (uReflectOffsetPx * (1.0 - normalizeSdf));
-                vec3 reflectSample = sampleTintedGlass(fragCoord + reflectOffset);
-                color = mix(refractColor, reflectSample, clamp(edgeMask * uReflectionStrength * 0.55, 0.0, 0.65));
-                float lumRef = dot(color, LUMA_WEIGHTS);
-                color += reflectSample * ((1.0 - normalizeSdf) * uReflectionLighten * 0.25)
-                    * (0.3 + 0.7 * clamp(1.9 - 2.15 * lumRef, 0.0, 1.0));
+                vec2 reflectOffset = reflectVec * (uReflectOffsetPx * edgeFalloff);
+                vec3 reflectSample = sampleTintedGlass(fragCoord + reflectOffset).rgb;
+                vec3 mixed = mix(refractSample.rgb, reflectSample, clamp((1.0 - edgeSmooth) * uReflectionStrength, 0.0, 1.0));
+                float lum = dot(mixed, LUMA_WEIGHTS);
+                color = mixed + reflectSample * (edgeFalloff * uReflectionLighten * refractSample.a)
+                      * (0.3 + 0.7 * clamp(1.9 - 2.15 * lum, 0.0, 1.0));
             }
 
-            // 3. Bottom Inner Glow (`calculateInnerEdgeEffects`)
+            // 3. Bottom Inner Glow
             float yn = smoothstep(0.0, 1.0, fragCoord.y / max(uResolution.y, 1.0));
-            color = clamp(color + vec3(yn * yn * uInnerBottom), 0.0, 1.0);
+            color += vec3(yn * yn * uInnerBottom);
 
-            // 4. Dual Directional Rim Lighting (`processLighting`)
-            color = processLighting(
-                color,
-                normal,
-                uLightDirection,
-                uLightIntensity,
-                uLightOpposite,
-                uLightAngleRange,
-                uLightEdgePow,
-                cornerMask,
-                normalizeSdf
-            );
+            // 4. Dual Directional Rim Lighting
+            if (edgeFalloff > 0.001) {
+                color = applyDirectionalLight(color, normal);
+            }
 
             // 5. Interactive Press Light (`007_2414.sksl`)
             if (uPressAlpha > 0.001) {
                 float distToTouch = length(fragCoord - uTouchPos);
                 float maxDim = max(uResolution.x, uResolution.y) * 0.85;
                 float radialFalloff = 1.0 - smoothstep(0.0, maxDim, distToTouch);
-                float rimBoost = pow(max(1.0 - normalizeSdf, 0.0), 1.5) * 0.6 + 0.4;
+                float rimBoost = pow(edgeFalloff, 1.5) * 0.6 + 0.4;
                 color = clamp(color + vec3(radialFalloff * rimBoost * uPressAlpha * 0.28), 0.0, 1.0);
             }
 
@@ -418,9 +397,7 @@ object HyperAgslShaders {
             if (abs(uColorPow - 1.0) > 0.01) {
                 color = pow(max(color, vec3(0.0)), vec3(uColorPow));
             }
-            if (uUnshade > 0.001) {
-                color = mix(color, uGlassColor.rgb, clamp(uUnshade, 0.0, 1.0));
-            }
+            color = mix(clamp(color, 0.0, 1.0), uGlassColor.rgb, clamp(uUnshade, 0.0, 1.0));
 
             float finalAlpha = clamp(uAlpha * shapeMask, 0.0, 1.0);
             return vec4(color * finalAlpha, finalAlpha);

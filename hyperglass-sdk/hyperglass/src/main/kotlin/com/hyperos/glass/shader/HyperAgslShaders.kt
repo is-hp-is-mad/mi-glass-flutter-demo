@@ -59,7 +59,7 @@ object HyperAgslShaders {
             float rawD = min(max(q.x, q.y), 0.0) - radius;
             cornerMask = 1.0 - smoothstep(0.0, -1.0, rawD);
             if (q.x > 0.0 && q.y > 0.0) {
-                if (uUseSmoothCorner == 1 && radius >= 1.0) {
+                if (uUseSmoothCorner == 1 && radius >= 1.0 && min(halfSize.x, halfSize.y) - radius > 1.0) {
                     return supercircleSdf(q, radius);
                 } else {
                     return length(q) - radius;
@@ -232,7 +232,7 @@ object HyperAgslShaders {
             float rawD = min(max(q.x, q.y), 0.0) - radius;
             cornerMask = 1.0 - smoothstep(-1.0, 0.0, rawD);
             if (q.x > 0.0 && q.y > 0.0) {
-                if (uUseSmoothCorner == 1 && radius >= 1.0) {
+                if (uUseSmoothCorner == 1 && radius >= 1.0 && min(halfSize.x, halfSize.y) - radius > 1.0) {
                     return supercircleSdf(q, radius);
                 } else {
                     return length(q) - radius;
@@ -448,7 +448,7 @@ object HyperAgslShaders {
             vec2 centerToUv = abs(uv - halfSize);
             vec2 q = centerToUv - (halfSize - vec2(radius));
             if (q.x > 0.0 && q.y > 0.0) {
-                if (uUseSmoothCorner == 1 && radius >= 1.0) {
+                if (uUseSmoothCorner == 1 && radius >= 1.0 && min(halfSize.x, halfSize.y) - radius > 1.0) {
                     return supercircleSdf(q, radius);
                 } else {
                     return length(q) - radius;
@@ -627,7 +627,7 @@ object HyperAgslShaders {
             vec2 centerToUv = abs(uv - halfSize);
             vec2 q = centerToUv - (halfSize - vec2(radius));
             if (q.x > 0.0 && q.y > 0.0) {
-                if (uUseSmoothCorner == 1 && radius >= 1.0) {
+                if (uUseSmoothCorner == 1 && radius >= 1.0 && min(halfSize.x, halfSize.y) - radius > 1.0) {
                     return supercircleSdf(q, radius);
                 } else {
                     return length(q) - radius;

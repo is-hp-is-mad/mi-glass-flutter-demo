@@ -230,6 +230,11 @@ private class MultiBackendSurfaceFactory : PlatformViewFactory(StandardMessageCo
 private class AndroidProceduralWallpaperView(context: Context) : View(context) {
     var wallpaperIndex: Int = 1
     var isDark: Boolean = false
+    var sceneOriginX: Float = 0f
+    var sceneOriginY: Float = 0f
+    var sceneWidth: Float = 0f
+    var sceneHeight: Float = 0f
+    private val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val arcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val loc = IntArray(2)
@@ -246,11 +251,16 @@ private class AndroidProceduralWallpaperView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val dm = resources.displayMetrics
-        val screenW = dm.widthPixels.coerceAtLeast(width.coerceAtLeast(1)).toFloat()
-        val screenH = dm.heightPixels.coerceAtLeast(height.coerceAtLeast(1)).toFloat()
-        getLocationOnScreen(loc)
+        val hasScene = sceneWidth > 1f && sceneHeight > 1f
+        val screenW = if (hasScene) sceneWidth * density else dm.widthPixels.coerceAtLeast(width.coerceAtLeast(1)).toFloat()
+        val screenH = if (hasScene) sceneHeight * density else dm.heightPixels.coerceAtLeast(height.coerceAtLeast(1)).toFloat()
         val save = canvas.save()
-        canvas.translate(-loc[0].toFloat(), -loc[1].toFloat())
+        if (hasScene) {
+            canvas.translate(-sceneOriginX * density, -sceneOriginY * density)
+        } else {
+            getLocationOnScreen(loc)
+            canvas.translate(-loc[0].toFloat(), -loc[1].toFloat())
+        }
 
         val idx = (wallpaperIndex % palettes.size + palettes.size) % palettes.size
         if (idx == 0) {
@@ -404,6 +414,10 @@ private class MultiBackendPlatformView(
 
         wallpaperView.wallpaperIndex = (params["wallpaperIndex"] as? Number)?.toInt() ?: 1
         wallpaperView.isDark = (params["dark"] as? Boolean) ?: false
+        wallpaperView.sceneOriginX = (params["sceneOriginX"] as? Number)?.toFloat() ?: 0f
+        wallpaperView.sceneOriginY = (params["sceneOriginY"] as? Number)?.toFloat() ?: 0f
+        wallpaperView.sceneWidth = (params["sceneWidth"] as? Number)?.toFloat() ?: 0f
+        wallpaperView.sceneHeight = (params["sceneHeight"] as? Number)?.toFloat() ?: 0f
         wallpaperView.invalidate()
 
         val renderBackend = params["renderBackend"] as? String ?: "xiaomi_port"

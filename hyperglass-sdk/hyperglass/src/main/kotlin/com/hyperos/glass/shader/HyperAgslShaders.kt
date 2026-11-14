@@ -348,43 +348,49 @@ object HyperAgslShaders {
             float rectEdge = max(min(uEdgePx, maxRadius), 1.0);
             float normalizeSdf = clamp(-d / rectEdge, 0.0, 1.0);
 
-            // Compute 2D SDF gradient & 3D bevel normal
+            // Compute 2D SDF gradient & glass bevel normal (aligned with mi_glass_v13_f16.frag)
             float eps = 1.5;
             float dummy = 0.0;
             float dx = evalShapeSdf(fragCoord + vec2(eps, 0.0), halfSize, radius, dummy)
                      - evalShapeSdf(fragCoord - vec2(eps, 0.0), halfSize, radius, dummy);
             float dy = evalShapeSdf(fragCoord + vec2(0.0, eps), halfSize, radius, dummy)
                      - evalShapeSdf(fragCoord - vec2(0.0, eps), halfSize, radius, dummy);
-            float curved = smooth5Vertical(d, rectEdge);
-            float dz = sqrt(max(rectEdge * rectEdge - curved * curved, 0.0));
-            vec3 sdfNormal = normalize(vec3(dx, dy, dz) + vec3(0.0, 0.0, 1e-5));
-
-            float zRaw = pow(max(1.0 - normalizeSdf, 0.0), max(uEdgePow, 0.01));
-            float zComp = sqrt(max(1.0 - zRaw * zRaw, 0.0));
-            vec3 normal = vec3(sdfNormal.xy * zRaw, zComp);
+            vec2 grad = normalize(vec2(dx, dy) + vec2(1e-5, 0.0));
+            float bevelWeight = pow(max(1.0 - normalizeSdf, 0.0), max(uEdgePow, 0.01));
+            vec3 normal = normalizeSdf >= 1.0
+                ? vec3(0.0, 0.0, -1.0)
+                : normalize(vec3(grad * bevelWeight, 1.0));
 
             // 1. Lens Refraction (`uvToRefractLens`)
-            float ior = max(uRefractIOR - uHit * 0.2, 1.01);
-            vec3 refractVec = refract(vec3(0.0, 0.0, -1.0), normal, 1.0 / ior);
-            float lensDepth = mix(
-                (uThicknessPx - uEdgePx) * 2.0,
-                uThicknessPx * 2.0,
-                abs(refractVec.z)
-            );
-            vec2 refractOffset = refractVec.xy * lensDepth;
+            vec2 refractOffset = vec2(0.0);
+            if (normalizeSdf < 1.0) {
+                float ior = max(uRefractIOR - uHit * 0.2, 1.01);
+                vec3 refractVec = refract(vec3(0.0, 0.0, -1.0), normal, 1.0 / ior);
+                float lensDepth = mix(
+                    max(uThicknessPx - rectEdge, 0.0) * 2.0,
+                    uThicknessPx * 2.0,
+                    normalizeSdf
+                );
+                refractOffset = refractVec.xy * min(lensDepth, max(rectEdge * 1.5, 16.0));
+            }
             vec3 refractColor = sampleTintedGlass(fragCoord + refractOffset);
 
-            // 2. Edge Reflection (`calculateReflection`)
-            vec2 reflectVec = 2.0 * normal.z * normal.xy;
-            vec2 reflectOffset = reflectVec * (uReflectOffsetPx * (1.0 - normalizeSdf));
-            vec3 reflectSample = sampleTintedGlass(fragCoord + reflectOffset);
-            vec3 reflectColor = clamp(reflectSample + vec3(uReflectionLighten * 0.05), 0.0, 1.0);
-            float reflectAmount = clamp(length(reflectVec) * uReflectionStrength * 0.35, 0.0, 0.55);
-            vec3 color = addLight(refractColor, reflectColor, reflectAmount);
+            // 2. Edge Reflection (`calculateReflection` - mix rather than additive rim glow)
+            vec3 color = refractColor;
+            if (normalizeSdf < 1.0) {
+                float edgeMask = 1.0 - smoothstep(0.0, 0.85, normalizeSdf);
+                vec2 reflectVec = 2.0 * normal.z * normal.xy;
+                vec2 reflectOffset = reflectVec * (uReflectOffsetPx * (1.0 - normalizeSdf));
+                vec3 reflectSample = sampleTintedGlass(fragCoord + reflectOffset);
+                color = mix(refractColor, reflectSample, clamp(edgeMask * uReflectionStrength * 0.55, 0.0, 0.65));
+                float lumRef = dot(color, LUMA_WEIGHTS);
+                color += reflectSample * ((1.0 - normalizeSdf) * uReflectionLighten * 0.25)
+                    * (0.3 + 0.7 * clamp(1.9 - 2.15 * lumRef, 0.0, 1.0));
+            }
 
             // 3. Bottom Inner Glow (`calculateInnerEdgeEffects`)
-            float bottomGlow = clamp((fragCoord.y / max(uResolution.y, 1.0)) * uInnerBottom, 0.0, 1.0);
-            color += (1.0 - color) * bottomGlow;
+            float yn = smoothstep(0.0, 1.0, fragCoord.y / max(uResolution.y, 1.0));
+            color = clamp(color + vec3(yn * yn * uInnerBottom), 0.0, 1.0);
 
             // 4. Dual Directional Rim Lighting (`processLighting`)
             color = processLighting(

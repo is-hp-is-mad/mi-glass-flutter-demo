@@ -234,6 +234,7 @@ class HyperNativeRomSurface extends StatefulWidget {
     this.shadow,
     this.wallpaperIndex = 1,
     this.dark = false,
+    this.sceneBoundaryKey,
     this.child,
   });
 
@@ -247,6 +248,7 @@ class HyperNativeRomSurface extends StatefulWidget {
   final ShadowToken? shadow;
   final int wallpaperIndex;
   final bool dark;
+  final GlobalKey? sceneBoundaryKey;
   final Widget? child;
 
   @override
@@ -256,6 +258,39 @@ class HyperNativeRomSurface extends StatefulWidget {
 class _HyperNativeRomSurfaceState extends State<HyperNativeRomSurface> {
   static int _nextSurfaceKey = 1;
   late final int _surfaceKey = _nextSurfaceKey++;
+  double _sceneOriginX = 0;
+  double _sceneOriginY = 0;
+  double _sceneWidth = 0;
+  double _sceneHeight = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleSceneMeasure();
+  }
+
+  void _scheduleSceneMeasure() {
+    if (defaultTargetPlatform != TargetPlatform.android || widget.sceneBoundaryKey == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final selfBox = context.findRenderObject();
+      final sceneBox = widget.sceneBoundaryKey?.currentContext?.findRenderObject();
+      if (selfBox is! RenderBox || !selfBox.hasSize || sceneBox is! RenderBox || !sceneBox.hasSize) return;
+      final origin = selfBox.localToGlobal(Offset.zero, ancestor: sceneBox);
+      final w = sceneBox.size.width;
+      final h = sceneBox.size.height;
+      if ((origin.dx - _sceneOriginX).abs() > 0.5 ||
+          (origin.dy - _sceneOriginY).abs() > 0.5 ||
+          (w - _sceneWidth).abs() > 0.5 ||
+          (h - _sceneHeight).abs() > 0.5) {
+        _sceneOriginX = origin.dx;
+        _sceneOriginY = origin.dy;
+        _sceneWidth = w;
+        _sceneHeight = h;
+        HyperNativeRom._channel.invokeMethod<void>('updateSurface', _buildParams());
+      }
+    });
+  }
 
   Map<String, Object?> _buildParams() => {
     'surfaceKey': _surfaceKey,
@@ -263,6 +298,10 @@ class _HyperNativeRomSurfaceState extends State<HyperNativeRomSurface> {
     'borderRadius': widget.borderRadius,
     'wallpaperIndex': widget.wallpaperIndex,
     'dark': widget.dark,
+    'sceneOriginX': _sceneOriginX,
+    'sceneOriginY': _sceneOriginY,
+    'sceneWidth': _sceneWidth,
+    'sceneHeight': _sceneHeight,
     if (widget.glass != null) ...{
       'mode': 'glass',
       'glassParams': HyperNativeRom.packGlassToken(widget.glass!),
@@ -289,6 +328,7 @@ class _HyperNativeRomSurfaceState extends State<HyperNativeRomSurface> {
     super.didUpdateWidget(oldWidget);
     if (defaultTargetPlatform == TargetPlatform.android) {
       HyperNativeRom._channel.invokeMethod<void>('updateSurface', _buildParams());
+      _scheduleSceneMeasure();
     }
   }
 

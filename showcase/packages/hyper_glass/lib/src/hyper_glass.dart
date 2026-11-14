@@ -433,6 +433,7 @@ class HyperGlass extends StatelessWidget {
             bloom: bloom,
             wallpaperIndex: scene.widget.wallpaperIndex,
             dark: scene.widget.dark,
+            sceneBoundaryKey: scene._boundary,
             child: child,
           );
         }

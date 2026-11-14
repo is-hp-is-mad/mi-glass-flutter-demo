@@ -332,7 +332,10 @@ set -euo pipefail
 {_ADB_SELECT_SNIPPET}
 adb wait-for-device
 adb shell am force-stop {shlex.quote(pkg)} >/dev/null 2>&1 || true
-adb install -r -d {shlex.quote(remote_apk)}
+if ! adb install -r -d {shlex.quote(remote_apk)}; then
+  adb uninstall {shlex.quote(pkg)} >/dev/null 2>&1 || true
+  adb install -r -d {shlex.quote(remote_apk)}
+fi
 adb logcat -c
 adb shell dumpsys gfxinfo {shlex.quote(pkg)} reset >/dev/null 2>&1 || true
 adb shell am start -W -n {shlex.quote(activity)}

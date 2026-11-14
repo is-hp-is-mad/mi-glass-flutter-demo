@@ -334,11 +334,42 @@ def verify_apk_on_box(
         check=True,
         timeout=60,
     )
-    runner.run(
-        ["instabox", "push", box_name, str(apk_path), remote_apk],
-        check=True,
-        timeout=180,
-    )
+    for push_attempt in range(1, 4):
+        push_res = runner.run(
+            ["instabox", "push", box_name, str(apk_path), remote_apk],
+            check=False,
+            timeout=180,
+        )
+        if push_res.returncode == 0:
+            break
+        if push_attempt < 3:
+            time.sleep(3)
+            continue
+        raise RuntimeError(
+            f"Command failed ({push_res.returncode}): instabox push {box_name} {apk_path} {remote_apk}\n"
+            f"stdout: {redact_sensitive(push_res.stdout)}\n"
+            f"stderr: {redact_sensitive(push_res.stderr)}"
+        )
+
+    extra_showcase_steps = ""
+    if target_key == "showcase":
+        extra_showcase_steps = f"""
+WM_SIZE=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -n 1 || echo "720x1280")
+W=${{WM_SIZE%x*}}
+H=${{WM_SIZE#*x}}
+adb shell input tap $((W * 50 / 100)) $((H * 555 / 1000))
+sleep 2
+adb shell screencap -p /data/local/tmp/miglass_showcase_port_settings.png
+adb pull /data/local/tmp/miglass_showcase_port_settings.png {shlex.quote(f'{BOX_OUT_DIR}/showcase_port_settings.png')}
+adb shell input tap $((W * 72 / 100)) $((H * 850 / 1000))
+sleep 3
+adb shell screencap -p /data/local/tmp/miglass_showcase_port_materials.png
+adb pull /data/local/tmp/miglass_showcase_port_materials.png {shlex.quote(f'{BOX_OUT_DIR}/showcase_port_materials.png')}
+adb shell input swipe $((W / 2)) $((H * 72 / 100)) $((W / 2)) $((H * 25 / 100)) 400
+sleep 2
+adb shell screencap -p /data/local/tmp/miglass_showcase_port_tokens.png
+adb pull /data/local/tmp/miglass_showcase_port_tokens.png {shlex.quote(f'{BOX_OUT_DIR}/showcase_port_tokens.png')}
+"""
 
     run_cmd = f"""
 set -euo pipefail
@@ -358,6 +389,7 @@ echo "MIGLASS_PID=${{PID}}"
 test -n "$PID"
 adb shell screencap -p {shlex.quote(device_png)}
 adb pull {shlex.quote(device_png)} {shlex.quote(f'{BOX_OUT_DIR}/{target_key}.png')}
+{extra_showcase_steps}
 adb shell dumpsys gfxinfo {shlex.quote(pkg)} > {shlex.quote(f'{BOX_OUT_DIR}/{target_key}_gfxinfo.txt')} || true
 adb logcat -d -t 500 > {shlex.quote(f'{BOX_OUT_DIR}/{target_key}_logcat.txt')} || true
 adb shell am force-stop {shlex.quote(pkg)} >/dev/null 2>&1 || true

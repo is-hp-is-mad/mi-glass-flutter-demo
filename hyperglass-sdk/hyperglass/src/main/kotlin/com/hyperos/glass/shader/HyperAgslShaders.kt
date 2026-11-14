@@ -346,10 +346,10 @@ object HyperAgslShaders {
             if (curvedD <= -rectEdge) {
                 normal = vec3(0.0, 0.0, -1.0);
             } else {
-                float dx = (evalCurvedBevelD(fragCoord + vec2(1.0, 0.0), halfSize, radius, rectEdge, uEdgePow)
-                          - evalCurvedBevelD(fragCoord - vec2(1.0, 0.0), halfSize, radius, rectEdge, uEdgePow)) * 0.5;
-                float dy = (evalCurvedBevelD(fragCoord + vec2(0.0, 1.0), halfSize, radius, rectEdge, uEdgePow)
-                          - evalCurvedBevelD(fragCoord - vec2(0.0, 1.0), halfSize, radius, rectEdge, uEdgePow)) * 0.5;
+                float dx = clamp((evalCurvedBevelD(fragCoord + vec2(1.0, 0.0), halfSize, radius, rectEdge, uEdgePow)
+                          - evalCurvedBevelD(fragCoord - vec2(1.0, 0.0), halfSize, radius, rectEdge, uEdgePow)) * 0.5, -1.0, 1.0);
+                float dy = clamp((evalCurvedBevelD(fragCoord + vec2(0.0, 1.0), halfSize, radius, rectEdge, uEdgePow)
+                          - evalCurvedBevelD(fragCoord - vec2(0.0, 1.0), halfSize, radius, rectEdge, uEdgePow)) * 0.5, -1.0, 1.0);
                 normal = normalize(vec3(dx, dy, 1.0));
             }
 

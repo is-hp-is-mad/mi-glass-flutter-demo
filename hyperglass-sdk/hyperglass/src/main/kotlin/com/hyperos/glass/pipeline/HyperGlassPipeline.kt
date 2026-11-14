@@ -445,10 +445,14 @@ class HyperGlassPipeline(private val targetView: View) {
             if (activeGlass != null) {
                 val smallRadius = activeGlass.blurRadius.smallBlurRadius.toFloat() * metricScale
                 val bigRadius = activeGlass.blurRadius.bigBlurRadius.toFloat() * metricScale
-                val smallCap = captureAndBlurBackdrop(w, h, 0, 2, smallRadius, false) ?: return false
-                val bigCap = captureAndBlurBackdrop(w, h, 0, 6, bigRadius, true) ?: smallCap
+                // Capture a margin around the view so refraction / reflection rays that leave
+                // the card sample real backdrop instead of smearing the clamped border texel.
+                val marginPx = 24
+                val smallCap = captureAndBlurBackdrop(w, h, marginPx, 2, smallRadius, false) ?: return false
+                val bigCap = captureAndBlurBackdrop(w, h, marginPx, 6, bigRadius, true) ?: smallCap
 
                 val ok = HyperGlES30Pipeline.renderGlassToBitmap(
+                    backdropMarginPx = marginPx,
                     smallBlurBitmap = smallCap,
                     bigBlurBitmap = bigCap,
                     outBitmap = outBmp,
@@ -687,7 +691,9 @@ class HyperGlassPipeline(private val targetView: View) {
         val depth = capturingDepth.get()
         capturingDepth.set(depth + 1)
         try {
-            bmp.eraseColor(0xFF10141C.toInt())
+            // Transparent, not a dark navy: a hardcoded colour bled into the blur wherever
+            // the capture margin reached past the source.
+            bmp.eraseColor(Color.TRANSPARENT)
             val save = capCanvas.save()
             val sx = capW.toFloat() / totalW.toFloat()
             val sy = capH.toFloat() / totalH.toFloat()
@@ -695,6 +701,16 @@ class HyperGlassPipeline(private val targetView: View) {
             capCanvas.translate(-relX.toFloat(), -relY.toFloat())
             sourceView.draw(capCanvas)
             capCanvas.restoreToCount(save)
+
+            // The part of the capture the source does not reach repeats the source's edge
+            // pixels, so the blur and out-of-card samples see backdrop rather than nothing.
+            val left = kotlin.math.ceil(-relX * sx).toInt().coerceIn(0, capW)
+            val top = kotlin.math.ceil(-relY * sy).toInt().coerceIn(0, capH)
+            val right = kotlin.math.floor((sourceView.width - relX) * sx).toInt().coerceIn(0, capW)
+            val bottom = kotlin.math.floor((sourceView.height - relY) * sy).toInt().coerceIn(0, capH)
+            if (right > left && bottom > top && (left > 0 || top > 0 || right < capW || bottom < capH)) {
+                extendCoveredEdges(bmp, left, top, right, bottom)
+            }
         } catch (_: Throwable) {
             return null
         } finally {
@@ -708,6 +724,28 @@ class HyperGlassPipeline(private val targetView: View) {
             fastStackBlur(bmp, boxRadius)
         }
         return bmp
+    }
+
+    /** Clamp-extends the pixels of `[left, right) x [top, bottom)` over the rest of [bitmap]. */
+    private fun extendCoveredEdges(bitmap: Bitmap, left: Int, top: Int, right: Int, bottom: Int) {
+        val w = bitmap.width
+        val h = bitmap.height
+        var pix = blurScratchInt
+        if (pix == null || pix.size < w * h) {
+            pix = IntArray(w * h)
+            blurScratchInt = pix
+        }
+        bitmap.getPixels(pix, 0, w, 0, 0, w, h)
+        for (y in top until bottom) {
+            val row = y * w
+            val first = pix[row + left]
+            val last = pix[row + right - 1]
+            for (x in 0 until left) pix[row + x] = first
+            for (x in right until w) pix[row + x] = last
+        }
+        for (y in 0 until top) System.arraycopy(pix, top * w, pix, y * w, w)
+        for (y in bottom until h) System.arraycopy(pix, (bottom - 1) * w, pix, y * w, w)
+        bitmap.setPixels(pix, 0, w, 0, 0, w, h)
     }
 
     /**

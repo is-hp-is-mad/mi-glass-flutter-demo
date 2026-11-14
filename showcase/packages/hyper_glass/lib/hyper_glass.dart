@@ -9,3 +9,4 @@ export 'src/glass_presets.dart';
 export 'src/glass_tokens.g.dart';
 export 'src/native_rom.dart';
 export 'src/view_shadow.dart';
+export 'src/gpu_engine.dart';

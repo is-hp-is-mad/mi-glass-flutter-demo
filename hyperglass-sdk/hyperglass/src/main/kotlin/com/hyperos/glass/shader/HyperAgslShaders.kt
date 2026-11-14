@@ -133,8 +133,9 @@ object HyperAgslShaders {
 
         vec3 processGlassColor(vec3 smallColor, vec3 bigColor) {
             vec3 bgAdjusted = clamp(adjustColor(bigColor, uBgColorSaturation, uBgColorBrightness), 0.0, 1.0);
-            vec3 burned = 1.0 - (1.0 - smallColor) / max(bgAdjusted, vec3(0.001));
-            burned = mix(smallColor, burned, clamp(uBurn, 0.0, 1.0));
+            vec3 delta = smallColor - vec3(0.5);
+            vec3 sCurve = 1.587 * delta * delta * delta + vec3(0.5);
+            vec3 burned = mix(smallColor, sCurve, clamp(uBurn, 0.0, 1.0));
             vec3 lightened = min(vec3(1.0), bgAdjusted + uInnerColorWhite);
             vec3 mixed = mix(burned, lightened, uInnerColorMix);
             return mix(mixed, uGlassColor.rgb, uGlassColor.a);
@@ -277,8 +278,11 @@ object HyperAgslShaders {
             smallRgb = adjustColor(smallRgb, uSaturation, uBrightness);
 
             vec3 bgAdjusted = clamp(adjustColor(bigRgb, uBgColorSaturation, uBgColorBrightness), 0.0, 1.0);
-            vec3 burned = 1.0 - (1.0 - smallRgb) / max(bgAdjusted, vec3(0.001));
-            burned = mix(smallRgb, burned, clamp(uBurn, 0.0, 1.0));
+            // Cubic S-curve tone polynomial in place of the color-burn division, which
+            // drove low channels to zero over a saturated backdrop (sky blue -> electric blue).
+            vec3 delta = smallRgb - vec3(0.5);
+            vec3 sCurve = 1.587 * delta * delta * delta + vec3(0.5);
+            vec3 burned = mix(smallRgb, sCurve, clamp(uBurn, 0.0, 1.0));
             vec3 lightened = min(vec3(1.0), bgAdjusted + uInnerColorWhite);
             vec3 mixed = mix(burned, lightened, uInnerColorMix);
             return clamp(mix(mixed, uGlassColor.rgb, uGlassColor.a), 0.0, 1.0);

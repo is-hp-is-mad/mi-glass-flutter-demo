@@ -47,8 +47,11 @@ import kotlin.math.sin
  *    `FragmentShader` passes.
  */
 class MainActivity : FlutterActivity() {
+    private var weatherGpuPlugin: WeatherGpuPlugin? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        weatherGpuPlugin = WeatherGpuPlugin(flutterEngine.dartExecutor.binaryMessenger, flutterEngine.renderer)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "hyper_glass/native_rom")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -97,6 +100,12 @@ class MainActivity : FlutterActivity() {
             .platformViewsController
             .registry
             .registerViewFactory("hyper_glass/native_view", MultiBackendSurfaceFactory())
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        weatherGpuPlugin?.dispose()
+        weatherGpuPlugin = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 }
 
@@ -361,6 +370,9 @@ private class MultiBackendPlatformView(
     init {
         clipChildren = true
         clipToPadding = true
+        // Prevent raw unblurred procedural wallpaper from drawing onto on-screen canvas,
+        // while allowing offscreen software backdrop capture to draw it for blurring.
+        wallpaperView.visibility = View.INVISIBLE
         addView(wallpaperView, LayoutParams(MATCH_PARENT, MATCH_PARENT))
         hyperPortView.setBackdropSourceView(wallpaperView)
         addView(hyperPortView, LayoutParams(MATCH_PARENT, MATCH_PARENT))

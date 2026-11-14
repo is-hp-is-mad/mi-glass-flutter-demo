@@ -673,9 +673,9 @@ class GlassToken @JvmOverloads constructor(
         @JvmField
         val Weather_Card_Default: GlassToken = fromShaderParams(
             "Weather_Card_Default",
-            floatArrayOf(0.5f, 1.0f, 0.8f, 1.2f, 0.24f, 1.6f, 0.14f, 0.2f, 0.6f, 0.9f, 0.01f, 1.0f, 1.0f, 1.0f, 0.05f, 0.3f, 0.5f, 1.5f, 1.0f, 20.0f, 1.6f, 98.22091f, 110.0f, 1.0f, 1.4f, -0.5f, 0.5f, -0.1f, 1.2f, 0.8f, 0.3f, 1.0f, 1.4f, 1.5f, 0.08f, 11.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f),
-            smallBlurRadius = 4,
-            bigBlurRadius = 1
+            floatArrayOf(0.5f, 1.0f, 0.8f, 1.2f, 0.24f, 1.6f, 0.14f, 0.2f, 0.6f, 0.9f, 0.01f, 1.0f, 1.0f, 1.0f, 0.12f, 0.20f, 0.40f, 1.5f, 1.0f, 20.0f, 1.6f, 98.22091f, 110.0f, 1.0f, 1.4f, -0.5f, 0.5f, -0.1f, 1.2f, 0.8f, 0.3f, 1.0f, 1.4f, 1.5f, 0.08f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f),
+            smallBlurRadius = 24,
+            bigBlurRadius = 96
         )
 
         // =========================================================================================

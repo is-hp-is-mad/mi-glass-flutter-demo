@@ -1,0 +1,351 @@
+name: CI Multi-Platform Build & Verification
+
+on:
+  push:
+    branches:
+      - main
+      - showcase-catalog
+  pull_request:
+    branches:
+      - main
+      - showcase-catalog
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.35.7'
+  JAVA_VERSION: '17'
+
+jobs:
+  # =========================================================================
+  # 1. Static Analysis & Unit Tests Gate (Fast-fail)
+  # =========================================================================
+  analyze-and-test:
+    name: Flutter Analyze & Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache MiSans font
+        id: cache-misans
+        uses: actions/cache@v4
+        with:
+          path: showcase/assets/fonts/
+          key: misans-font-v1
+
+      - name: Fetch MiSans font
+        if: steps.cache-misans.outputs.cache-hit != 'true'
+        working-directory: showcase
+        shell: bash
+        run: |
+          curl -fL --retry 8 --retry-all-errors --retry-delay 5 -C - -o "$RUNNER_TEMP/MiSans.zip" https://hyperos.mi.com/font-download/MiSans.zip
+          python tool/fetch_misans.py "$RUNNER_TEMP/MiSans.zip"
+
+      - name: Analyze hyper_glass core package
+        working-directory: showcase/packages/hyper_glass
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Analyze showcase application
+        working-directory: showcase
+        run: |
+          flutter pub get
+          flutter analyze
+          python -m unittest discover -s tool -p "test_*.py" -v
+
+  # =========================================================================
+  # 2. Android Build (SDK Library AAR, Sample APK, Showcase APK)
+  # =========================================================================
+  build-android:
+    name: Build Android (SDK & Showcase)
+    needs: analyze-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache MiSans font
+        id: cache-misans
+        uses: actions/cache@v4
+        with:
+          path: showcase/assets/fonts/
+          key: misans-font-v1
+
+      - name: Fetch MiSans font
+        if: steps.cache-misans.outputs.cache-hit != 'true'
+        working-directory: showcase
+        shell: bash
+        run: |
+          curl -fL --retry 8 --retry-all-errors --retry-delay 5 -C - -o "$RUNNER_TEMP/MiSans.zip" https://hyperos.mi.com/font-download/MiSans.zip
+          python tool/fetch_misans.py "$RUNNER_TEMP/MiSans.zip"
+
+      - name: Build HyperGlass Standalone Android SDK & Demo APK
+        working-directory: hyperglass-sdk
+        run: |
+          chmod +x gradlew
+          ./gradlew :hyperglass:assembleRelease :sample:assembleDebug --stacktrace
+
+      - name: Build Flutter Showcase Android APK
+        working-directory: showcase
+        run: |
+          flutter pub get
+          flutter build apk --release
+
+      - name: Upload Android SDK AAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyperglass-sdk-aar
+          path: hyperglass-sdk/hyperglass/build/outputs/aar/*.aar
+          if-no-files-found: error
+
+      - name: Upload Android Demo APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apks
+          path: |
+            hyperglass-sdk/sample/build/outputs/apk/debug/*.apk
+            showcase/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+
+  # =========================================================================
+  # 3. Windows & Linux Desktop Build Matrix
+  # =========================================================================
+  build-desktop:
+    name: Build Desktop (${{ matrix.platform }})
+    needs: analyze-and-test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            build_cmd: flutter build windows --release
+            artifact_name: windows-release-bundle
+            artifact_path: showcase/build/windows/x64/runner/Release/
+          - platform: linux
+            os: ubuntu-latest
+            build_cmd: flutter build linux --release
+            artifact_name: linux-release-bundle
+            artifact_path: showcase/build/linux/x64/release/bundle/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Linux Build Dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev libepoxy-dev libgl1-mesa-dev libegl1-mesa-dev xvfb mesa-utils fonts-noto-cjk
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache MiSans font
+        id: cache-misans
+        uses: actions/cache@v4
+        with:
+          path: showcase/assets/fonts/
+          key: misans-font-v1
+
+      - name: Fetch MiSans font
+        if: steps.cache-misans.outputs.cache-hit != 'true'
+        working-directory: showcase
+        shell: bash
+        run: |
+          curl -fL --retry 8 --retry-all-errors --retry-delay 5 -C - -o "$RUNNER_TEMP/MiSans.zip" https://hyperos.mi.com/font-download/MiSans.zip
+          python tool/fetch_misans.py "$RUNNER_TEMP/MiSans.zip"
+
+      - name: Compile Desktop Release Binary
+        working-directory: showcase
+        run: |
+          flutter pub get
+          ${{ matrix.build_cmd }}
+
+      - name: Headless Verification (Linux xvfb)
+        if: matrix.platform == 'linux'
+        working-directory: showcase
+        run: |
+          timeout 30 xvfb-run -a -s "-screen 0 1920x1080x24" build/linux/x64/release/bundle/hyper_glass || true
+
+      - name: Upload Desktop Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+
+  # =========================================================================
+  # 4. macOS Desktop Build
+  # =========================================================================
+  build-macos:
+    name: Build macOS (Metal)
+    needs: analyze-and-test
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache MiSans font
+        id: cache-misans
+        uses: actions/cache@v4
+        with:
+          path: showcase/assets/fonts/
+          key: misans-font-v1
+
+      - name: Fetch MiSans font
+        if: steps.cache-misans.outputs.cache-hit != 'true'
+        working-directory: showcase
+        shell: bash
+        run: |
+          curl -fL --retry 8 --retry-all-errors --retry-delay 5 -C - -o "$RUNNER_TEMP/MiSans.zip" https://hyperos.mi.com/font-download/MiSans.zip
+          python tool/fetch_misans.py "$RUNNER_TEMP/MiSans.zip"
+
+      - name: Compile macOS Release App Bundle
+        working-directory: showcase
+        run: |
+          flutter pub get
+          flutter build macos --release
+
+      - name: Upload macOS Application Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-app
+          path: showcase/build/macos/Build/Products/Release/hyper_glass.app
+          if-no-files-found: error
+
+  # =========================================================================
+  # 5. Android E2E Verification (InstaBox Reused Android Container)
+  # =========================================================================
+  e2e-android:
+    name: E2E · Android (InstaBox Reused Box)
+    needs: [build-android]
+    concurrency:
+      group: instabox-android-e2e
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
+      INSTABOX_NAME: ${{ vars.INSTABOX_ANDROID_BOX || 'miglass-e2e-android' }}
+    steps:
+      - name: Check INSTABOX_API_KEY secret
+        id: check-secret
+        run: |
+          if [ -z "${INSTABOX_API_KEY:-}" ]; then
+            echo "::notice::INSTABOX_API_KEY secret is not configured; skipping InstaBox Android E2E."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check-secret.outputs.enabled == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.check-secret.outputs.enabled == 'true'
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-python@v5
+        if: steps.check-secret.outputs.enabled == 'true'
+        with:
+          python-version: '3.12'
+
+      - name: Install InstaBox CLI & run unit checks
+        if: steps.check-secret.outputs.enabled == 'true'
+        run: |
+          npm install -g instabox
+          python -m unittest discover -s showcase/tool -p "test_instabox_*.py" -v
+
+      - uses: actions/download-artifact@v4
+        if: steps.check-secret.outputs.enabled == 'true'
+        with:
+          name: android-apks
+          path: downloaded_android
+
+      - name: Verify Sample & Showcase APKs on persistent InstaBox Android box
+        if: steps.check-secret.outputs.enabled == 'true'
+        run: |
+          sample_apk=$(find downloaded_android -name '*sample*debug*.apk' | head -n 1)
+          showcase_apk=$(find downloaded_android -name '*app-release*.apk' | head -n 1)
+          test -s "$sample_apk"
+          test -s "$showcase_apk"
+          python showcase/tool/instabox_android_e2e.py run \
+            --box "$INSTABOX_NAME" \
+            --sample-apk "$sample_apk" \
+            --showcase-apk "$showcase_apk" \
+            --out-dir e2e_out/android
+
+      - name: Clean InstaBox temp environment & suspend box
+        if: always() && steps.check-secret.outputs.enabled == 'true'
+        run: python showcase/tool/instabox_android_e2e.py cleanup --box "$INSTABOX_NAME" || true
+
+      - name: Publish Android E2E summary
+        if: always() && steps.check-secret.outputs.enabled == 'true' && hashFiles('e2e_out/android/summary.md') != ''
+        run: cat e2e_out/android/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Android E2E screenshots & metrics
+        if: always() && steps.check-secret.outputs.enabled == 'true' && hashFiles('e2e_out/android/metrics.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-android
+          path: e2e_out/android/
+          if-no-files-found: warn
+          retention-days: 14

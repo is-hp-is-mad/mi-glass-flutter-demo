@@ -55,6 +55,7 @@ object HyperGlES30Pipeline {
         uniform sampler2D uBigBlurTex;
 
         uniform vec2 uResolution;
+        uniform float uBackdropMargin;
         uniform float uCornerRadius;
         uniform int uUseSmoothCorner;
 
@@ -133,9 +134,14 @@ object HyperGlES30Pipeline {
         }
 
         vec3 sampleTintedGlass(vec2 localCoord) {
-            vec2 uv = clamp(localCoord / max(uResolution, vec2(1.0)), vec2(0.001), vec2(0.999));
-            vec3 smallRgb = texture(uSmallBlurTex, uv).rgb;
-            vec3 bigRgb = texture(uBigBlurTex, uv).rgb;
+            // The backdrop bitmaps cover the view plus uBackdropMargin px on every side, so
+            // refraction / reflection rays that leave the card still land on real pixels.
+            vec2 uv = (localCoord + vec2(uBackdropMargin)) / max(uResolution + vec2(2.0 * uBackdropMargin), vec2(1.0));
+            uv = clamp(uv, vec2(0.001), vec2(0.999));
+            vec4 rawSmall = texture(uSmallBlurTex, uv);
+            vec4 rawBig = texture(uBigBlurTex, uv);
+            vec3 smallRgb = rawSmall.a > 1e-4 ? rawSmall.rgb / rawSmall.a : vec3(0.0);
+            vec3 bigRgb = rawBig.a > 1e-4 ? rawBig.rgb / rawBig.a : vec3(0.0);
 
             float luma = dot(smallRgb, LUMA_WEIGHTS);
             float darkerFactor = smoothstep(uDarkerRange.x, uDarkerRange.y, luma) * uDarker;
@@ -144,8 +150,9 @@ object HyperGlES30Pipeline {
             smallRgb = adjustColor(smallRgb, uSaturation, uBrightness);
 
             vec3 bgAdjusted = clamp(adjustColor(bigRgb, uBgColorSaturation, uBgColorBrightness), 0.0, 1.0);
-            vec3 burned = 1.0 - (1.0 - smallRgb) / max(bgAdjusted, vec3(0.001));
-            burned = mix(smallRgb, burned, clamp(uBurn, 0.0, 1.0));
+            vec3 delta = smallRgb - vec3(0.5);
+            vec3 sCurve = 1.587 * delta * delta * delta + vec3(0.5);
+            vec3 burned = mix(smallRgb, sCurve, clamp(uBurn, 0.0, 1.0));
             vec3 lightened = min(vec3(1.0), bgAdjusted + uInnerColorWhite);
             vec3 mixed = mix(burned, lightened, uInnerColorMix);
             return clamp(mix(mixed, uGlassColor.rgb, uGlassColor.a), 0.0, 1.0);
@@ -458,7 +465,8 @@ object HyperGlES30Pipeline {
         heightPx: Int,
         cornerRadiusPx: Float,
         density: Float,
-        useSuperellipse: Boolean
+        useSuperellipse: Boolean,
+        backdropMarginPx: Int = 0
     ): Boolean {
         if (widthPx <= 0 || heightPx <= 0) return false
         if (!ensureInitialized()) return false
@@ -506,6 +514,7 @@ object HyperGlES30Pipeline {
             GLES30.glUniform1i(GLES30.glGetUniformLocation(glassProgram, "uBigBlurTex"), 1)
 
             GLES30.glUniform2f(GLES30.glGetUniformLocation(glassProgram, "uResolution"), widthPx.toFloat(), heightPx.toFloat())
+            GLES30.glUniform1f(GLES30.glGetUniformLocation(glassProgram, "uBackdropMargin"), backdropMarginPx.toFloat())
             GLES30.glUniform1f(GLES30.glGetUniformLocation(glassProgram, "uCornerRadius"), cornerRadiusPx)
             GLES30.glUniform1i(GLES30.glGetUniformLocation(glassProgram, "uUseSmoothCorner"), if (useSuperellipse) 1 else 0)
             GLES30.glUniform4f(GLES30.glGetUniformLocation(glassProgram, "uLuminanceCurve"), poly[0], poly[1], poly[2], poly[3])

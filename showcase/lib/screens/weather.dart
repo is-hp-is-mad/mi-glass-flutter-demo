@@ -80,7 +80,13 @@ class _WeatherAppState extends State<WeatherApp> with TickerProviderStateMixin {
         builder: (context, _) => HyperGlassScene(
           animate: _menu.active,
           background: HyperGlassScene(
-            background: Wallpaper(index: Wallpaper.sky, dark: dark),
+            background: HyperGpuWeatherBackdrop(
+              weatherType: 'cloudy',
+              intensity: 1.0,
+              isDark: dark,
+              timeOfDay: 0.5,
+              fallback: Wallpaper(index: Wallpaper.sky, dark: dark, animate: false),
+            ),
             child: ListView(
               controller: _scroll,
               padding: EdgeInsets.fromLTRB(16, top + 60, 16, 60),

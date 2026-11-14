@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../screens/gallery.dart';
 import '../screens/lab.dart';
 import '../screens/traits.dart';
-import '../screens/weather.dart';
 import '../ui/art.dart';
 import '../ui/kit.dart';
 import 'app.dart';
@@ -40,7 +38,14 @@ class _MaterialsPageState extends State<MaterialsPage> {
         const PrefCategory('玻璃令牌 · GlassToken'),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: HySegmented(items: _groups, index: _group, onChanged: (i) => setState(() => _group = i)),
+          child: HySegmented(
+            items: _groups,
+            index: _group,
+            onChanged: (i) {
+              setState(() => _group = i);
+              HyperOverlay.maybeOf(context)?.refresh();
+            },
+          ),
         ),
         LayoutBuilder(
           builder: (context, c) {
@@ -133,18 +138,6 @@ class _MaterialsPageState extends State<MaterialsPage> {
               icon: Icons.auto_awesome_rounded,
               color: const Color(0xffff5a7d),
               onTap: () => host.push(TraitsApp(onBack: host.pop)),
-            ),
-            PrefRow(
-              '相册示例',
-              icon: Icons.filter_vintage_rounded,
-              color: const Color(0xffff7a59),
-              onTap: () => host.push(GalleryApp(onBack: host.pop)),
-            ),
-            PrefRow(
-              '天气示例',
-              icon: Icons.wb_sunny_rounded,
-              color: const Color(0xff2f7bff),
-              onTap: () => host.push(WeatherApp(onBack: host.pop)),
             ),
           ],
         ),

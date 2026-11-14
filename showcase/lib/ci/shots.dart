@@ -11,7 +11,6 @@ import 'package:flutter/scheduler.dart';
 import '../catalog/app.dart';
 import '../catalog/controls_page.dart';
 import '../screens/traits.dart';
-import '../screens/weather.dart';
 import '../ui/kit.dart';
 
 /// SHOWCASE_SHOTS=dir: walks through every screen and saves a PNG of each. Screens are reached through
@@ -218,7 +217,7 @@ Future<void> runShots(GlobalKey root, Os os) async {
     });
     await run('push pop', () async {
       for (var i = 0; i < 6; i++) {
-        app.push(WeatherApp(onBack: app.pop));
+        app.push(TraitsApp(onBack: app.pop));
         await wait(700);
         app.pop();
         await wait(700);
@@ -228,11 +227,6 @@ Future<void> runShots(GlobalKey root, Os os) async {
     await wait(1500);
     await run('traits idle', () => wait(3000));
     await run('traits scroll', () => swing(240));
-    app.pop();
-    await wait(900);
-    app.push(WeatherApp(onBack: app.pop));
-    await wait(1200);
-    await run('weather scroll', () => swing(240));
     app.pop();
     await wait(900);
     await emit(['PERF,E']);

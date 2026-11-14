@@ -16,8 +16,10 @@ class HyperOverlay extends StatefulWidget {
   final Widget child;
   final Widget? floating;
 
+  static HyperOverlayState? maybeOf(BuildContext context) => context.findAncestorStateOfType<HyperOverlayState>();
+
   static HyperOverlayState of(BuildContext context) {
-    final state = context.findAncestorStateOfType<HyperOverlayState>();
+    final state = maybeOf(context);
     if (state != null) return state;
     throw FlutterError('HyperOverlay.of was called from a context with no HyperOverlay above it.');
   }

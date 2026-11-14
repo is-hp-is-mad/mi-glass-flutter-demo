@@ -360,24 +360,14 @@ class HyperGlassRenderer {
   /// With [tint] the result's alpha carries data, so it is returned as a separate opaque image [a].
   RefractTexture _lmGaussianBlur(ui.Image src, double radius, {GlassFilter? tint, ui.Image? bigBlur}) {
     final st = LMGaussianState.forRadius(radius);
-    final rw = (src.width ~/ 64) * 64, rh = (src.height ~/ 64) * 64;
     final temps = <ui.Image>[];
     var cur = src;
-    switch (st.factor) {
-      case 1:
-        break;
-      case 2:
-        cur = _downsample(src, src.width ~/ 2, src.height ~/ 2, 0);
-      case 4:
-        cur = _downsample(src, math.max(1, rw ~/ 4), math.max(1, rh ~/ 4), 1);
-      case 16:
-        final d8 = _downsample(src, math.max(1, rw ~/ 8), math.max(1, rh ~/ 8), 2);
-        temps.add(d8);
-        cur = _downsample(d8, math.max(1, d8.width ~/ 2), math.max(1, d8.height ~/ 2), 0);
-      default:
-        cur = _downsample(src, math.max(1, rw ~/ st.factor), math.max(1, rh ~/ st.factor), 2);
+    var remaining = st.factor;
+    while (remaining >= 2 && cur.width > 16 && cur.height > 16) {
+      cur = _downsample(cur, math.max(1, cur.width ~/ 2), math.max(1, cur.height ~/ 2), 0);
+      temps.add(cur);
+      remaining ~/= 2;
     }
-    if (!identical(cur, src)) temps.add(cur);
     final bx = _blurPass(cur, st, 0);
     final by = _blurPass(bx, st, 1);
     temps.addAll([bx]);

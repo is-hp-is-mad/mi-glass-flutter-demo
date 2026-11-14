@@ -259,7 +259,10 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
     final b = _backdrop, r = _renderer;
     if (b == null || r == null) return null;
     final sigma = radius * 0.25 * 0.45;
-    return _blurred.putIfAbsent(radius, () => r.gaussianBlur(b, sigma * _dpr * _scale, downscale: _scale < 1 ? 1 : 2));
+    return _blurred.putIfAbsent(
+      radius,
+      () => r.gaussianBlur(b, sigma * _dpr * _scale, downscale: (_scale < 1 || _dpr <= 1.5) ? 1 : 2),
+    );
   }
 
   /// The pre-tinted refract texture for [g], computed once per snapshot and shared by all cards.
@@ -706,7 +709,7 @@ class _RenderGlass extends RenderBox {
       img,
       Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
       offset & size,
-      Paint()..filterQuality = FilterQuality.medium,
+      Paint()..filterQuality = FilterQuality.high,
     );
     HyperGlassRenderer.deferDispose(image: _lastImage);
     _lastImage = img;

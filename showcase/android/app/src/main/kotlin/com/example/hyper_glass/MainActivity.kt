@@ -210,7 +210,7 @@ private object XiaomiRomReflector {
     }
 
     val isSupportGlass: Boolean by lazy {
-        isBlurSupported && setMiGlass != null
+        setMiGlass != null && (isBlurSupported || hyperOsVersion >= 1)
     }
 }
 
@@ -408,10 +408,12 @@ private class MultiBackendPlatformView(
 
         val renderBackend = params["renderBackend"] as? String ?: "xiaomi_port"
         if (renderBackend == "xiaomi_native") {
+            wallpaperView.visibility = View.VISIBLE
             hyperPortView.visibility = View.GONE
             xiaomiNativeView.visibility = View.VISIBLE
             xiaomiNativeView.applyRomParams(params, radiusDp)
         } else {
+            wallpaperView.visibility = View.INVISIBLE
             xiaomiNativeView.visibility = View.GONE
             hyperPortView.visibility = View.VISIBLE
             applyPortParams(params, radiusDp)
@@ -528,6 +530,9 @@ private class XiaomiNativeSurfaceView(context: Context) : View(context) {
                 val bigPx = (((params["bigBlur"] as? Number)?.toFloat() ?: 500f) * density).roundToInt()
                 runCatching {
                     XiaomiRomReflector.setMiViewMaterialType?.invoke(this, 1)
+                    XiaomiRomReflector.setMiBackgroundBlurMode?.invoke(this, 1)
+                    XiaomiRomReflector.setMiViewBlurMode?.invoke(this, 1)
+                    XiaomiRomReflector.setMiBackgroundBlurType?.invoke(this, 0)
                     XiaomiRomReflector.setMiGlassBlurRadius?.invoke(this, smallPx, bigPx)
                     XiaomiRomReflector.setMiGlass?.invoke(this, glassParams)
                 }

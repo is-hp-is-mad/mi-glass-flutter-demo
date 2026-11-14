@@ -223,6 +223,7 @@ class FloatSurface extends StatelessWidget {
         material: Hy.thinGlass(dark),
         borderRadius: radius,
         opacity: opacity,
+        forceFlutterBackdrop: true,
         bloom: bloom ?? (dark ? BloomTokens.strokeMiddleDark : BloomTokens.strokeMiddleLight),
         child: child,
       ),
@@ -353,6 +354,7 @@ class FloatingBar extends StatelessWidget {
                   borderRadius: 0,
                   opacity: v,
                   gradientBlur: true,
+                  forceFlutterBackdrop: true,
                   overlayMask: mask?.withValues(alpha: dark ? 0.45 : 0.35),
                 );
               },

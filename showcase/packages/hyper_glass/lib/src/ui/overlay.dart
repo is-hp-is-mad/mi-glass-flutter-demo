@@ -217,6 +217,7 @@ class HyperOverlayState extends State<HyperOverlay> with TickerProviderStateMixi
                     fallback: Hy.card(dark),
                   ),
                   borderRadius: Hy.rBig,
+                  forceFlutterBackdrop: true,
                   bloom: dark ? BloomTokens.strokeSmallLight : BloomTokens.strokeBigLight,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),

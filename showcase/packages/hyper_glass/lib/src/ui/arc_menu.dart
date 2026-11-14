@@ -150,6 +150,7 @@ class ArcMenu extends StatelessWidget {
                   material: BlendMaterial(sigma: 60, layers: base.layers, fallback: base.fallback),
                   borderRadius: radius,
                   opacity: motion.alpha.value,
+                  forceFlutterBackdrop: true,
                   bloom: dark ? BloomTokens.strokeSmallDark : BloomTokens.strokeSmallLight,
                   child: Opacity(
                     opacity: motion.alpha.value,

@@ -446,6 +446,7 @@ class HyperBlendBlur extends StatelessWidget {
     this.bloom,
     this.gradientBlur = false,
     this.overlayMask,
+    this.forceFlutterBackdrop = false,
     this.child,
   });
 
@@ -459,6 +460,10 @@ class HyperBlendBlur extends StatelessWidget {
 
   /// Optional OverlayMaskConfig base colour composited with the ROM's 17-stop alpha curve.
   final Color? overlayMask;
+
+  /// Forces sampling from the Flutter [HyperGlassScene] instead of an Android PlatformView backdrop.
+  /// Used by floating chrome (bottom bar, menus, dialogs, app bar) that sits above Flutter pages.
+  final bool forceFlutterBackdrop;
   final Widget? child;
 
   @override
@@ -468,7 +473,7 @@ class HyperBlendBlur extends StatelessWidget {
       listenable: hyperRenderController,
       builder: (context, _) {
         final mode = hyperRenderController.mode;
-        if (defaultTargetPlatform == TargetPlatform.android && mode != HyperRenderMode.flutterPort) {
+        if (defaultTargetPlatform == TargetPlatform.android && mode != HyperRenderMode.flutterPort && !forceFlutterBackdrop) {
           return HyperNativeRomSurface(
             renderBackend: mode.id,
             blend: material,

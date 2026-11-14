@@ -228,28 +228,46 @@ class _HyperGlassSceneState extends State<HyperGlassScene> with SingleTickerProv
     }
     _dirty = false;
     _inFlight = true;
+    final pixelRatio = dpr * scale;
+    void finish(ui.Image img) {
+      _inFlight = false;
+      if (!mounted) {
+        img.dispose();
+        return;
+      }
+      _backdrop?.dispose();
+      _backdrop = img;
+      _region = snapped;
+      _dpr = dpr;
+      _scale = scale;
+      _clearRefract();
+      _frame.value++; // surfaces repaint with the new backdrop
+      _releaseFirstFrame();
+      if (widget.animate || _dirty) _scheduleSnapshot();
+    }
     layer
-        .toImage(snapped, pixelRatio: dpr * scale)
+        .toImage(snapped, pixelRatio: pixelRatio)
         .then(
-          (img) {
-            _inFlight = false;
-            if (!mounted) {
-              img.dispose();
-              return;
-            }
-            _backdrop?.dispose();
-            _backdrop = img;
-            _region = snapped;
-            _dpr = dpr;
-            _scale = scale;
-            _clearRefract();
-            _frame.value++; // surfaces repaint with the new backdrop
-            _releaseFirstFrame();
-            if (widget.animate || _dirty) _scheduleSnapshot();
-          },
+          finish,
           onError: (Object _) {
-            _inFlight = false;
-            _releaseFirstFrame();
+            // Hybrid-composition PlatformViews (xiaomi_native / xiaomi_port) cannot be rasterized
+            // by OffsetLayer.toImage; repaint the boundary into a temporary layer tree without them.
+            final root = OffsetLayer();
+            final ctx = _NoPlatformViewContext(root, Offset.zero & ro.size);
+            // ignore: invalid_use_of_protected_member
+            ro.paint(ctx, Offset.zero);
+            ctx.stopRecordingIfNeeded();
+            root.toImage(snapped, pixelRatio: pixelRatio).then(
+              (img) {
+                root.dispose();
+                finish(img);
+              },
+              onError: (Object _) {
+                root.dispose();
+                _inFlight = false;
+                _releaseFirstFrame();
+              },
+            );
           },
         );
   }
@@ -791,4 +809,44 @@ class _RenderGlass extends RenderBox {
   final _overlayImages = <ui.Image>[];
   ui.FragmentShader? _lastShader;
   ui.Image? _lastImage;
+}
+
+/// Captures a [RenderRepaintBoundary] into an offscreen [OffsetLayer] while omitting
+/// [PlatformViewLayer]s so `OffsetLayer.toImage` never fails on hybrid-composition views.
+class _NoPlatformViewContext extends PaintingContext {
+  _NoPlatformViewContext(this._layer, Rect estimatedBounds) : super(_layer, estimatedBounds);
+  final ContainerLayer _layer;
+
+  @override
+  void addLayer(Layer layer) {
+    if (layer is PlatformViewLayer) return;
+    super.addLayer(layer);
+  }
+
+  @override
+  void pushLayer(
+    ContainerLayer childLayer,
+    PaintingContextCallback painter,
+    Offset offset, {
+    Rect? childPaintBounds,
+  }) {
+    stopRecordingIfNeeded();
+    _layer.append(childLayer);
+    final childContext = _NoPlatformViewContext(childLayer, childPaintBounds ?? estimatedBounds);
+    painter(childContext, offset);
+    childContext.stopRecordingIfNeeded();
+  }
+
+  @override
+  void paintChild(RenderObject child, Offset offset) {
+    if (child.isRepaintBoundary) {
+      pushLayer(OffsetLayer(offset: offset), (context, _) {
+        // ignore: invalid_use_of_protected_member
+        child.paint(context, Offset.zero);
+      }, Offset.zero);
+      return;
+    }
+    // ignore: invalid_use_of_protected_member
+    child.paint(this, offset);
+  }
 }

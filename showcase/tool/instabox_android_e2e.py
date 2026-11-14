@@ -218,10 +218,23 @@ def ensure_box_ready(runner: Runner, box_name: str, *, allow_create: bool = Fals
         state = "created"
     else:
         print(f"[instabox] Reusing existing Android box '{resolved_name}'...")
-        res = runner.run(["instabox", "resume", resolved_name], check=False, timeout=180)
-        if res.returncode != 0:
-            runner.run(["instabox", "start", resolved_name], check=False, timeout=180)
-        runner.exec_box(resolved_name, "true", check=True, timeout=120)
+        for attempt in range(1, 7):
+            res = runner.run(["instabox", "resume", resolved_name], check=False, timeout=180)
+            if res.returncode != 0 and "operation_conflict" not in (res.stderr or ""):
+                res = runner.run(["instabox", "start", resolved_name], check=False, timeout=180)
+            probe = runner.exec_box(resolved_name, "true", check=False, timeout=120)
+            if probe.returncode == 0:
+                break
+            combined = f"{res.stderr or ''}\n{probe.stderr or ''}"
+            if "operation_conflict" in combined and attempt < 6:
+                print(f"[instabox] Box '{resolved_name}' has an active operation; retrying in 5s ({attempt}/6)...")
+                time.sleep(5)
+                continue
+            raise RuntimeError(
+                f"Command failed ({probe.returncode}): instabox exec {resolved_name} -- sh -c true\n"
+                f"stdout: {redact_sensitive(probe.stdout)}\n"
+                f"stderr: {redact_sensitive(probe.stderr)}"
+            )
         state = "reused"
 
     boot_cmd = f"""

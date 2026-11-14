@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -260,7 +259,7 @@ class _HyperGpuWeatherBackdropState extends State<HyperGpuWeatherBackdrop> {
           fit: StackFit.expand,
           children: [
             if (hasNativeTexture)
-              Texture(textureId: textureId, filterQuality: FilterQuality.linear)
+              Texture(textureId: textureId, filterQuality: FilterQuality.low)
             else if (widget.fallback != null)
               widget.fallback!
             else

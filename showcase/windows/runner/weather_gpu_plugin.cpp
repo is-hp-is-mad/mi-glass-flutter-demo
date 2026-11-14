@@ -506,7 +506,7 @@ void WeatherGpuPlugin::DisposeTextureInstance(int64_t texture_id) {
 void WeatherGpuPlugin::HandleMethodCall(
     const flutter::MethodCall<flutter::EncodableValue>& method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-  const std::string& method = method_call.method();
+  const std::string& method = method_call.method_name();
 
   if (method == "initialize") {
     const auto* args = std::get_if<flutter::EncodableMap>(method_call.arguments());

@@ -182,6 +182,18 @@ def resolve_box_name(runner: Runner, requested_box: str) -> tuple[str, bool]:
     return requested_box, False
 
 
+_ADB_SELECT_SNIPPET = """
+ADB_SERIAL=$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')
+if [ -z "${ADB_SERIAL}" ]; then
+  adb connect 127.0.0.1:5555 >/dev/null 2>&1 || true
+  ADB_SERIAL=$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')
+fi
+if [ -n "${ADB_SERIAL}" ]; then
+  export ANDROID_SERIAL="${ADB_SERIAL}"
+fi
+""".strip()
+
+
 def ensure_box_ready(runner: Runner, box_name: str, *, allow_create: bool = False) -> tuple[str, str]:
     """Reuse an existing persistent Android box (or create only when `allow_create=True`).
 
@@ -212,7 +224,7 @@ def ensure_box_ready(runner: Runner, box_name: str, *, allow_create: bool = Fals
         runner.exec_box(resolved_name, "true", check=True, timeout=120)
         state = "reused"
 
-    boot_cmd = """
+    boot_cmd = f"""
 set -euo pipefail
 for i in $(seq 1 90); do
   if [ "$(docker exec instabox-android getprop sys.boot_completed 2>/dev/null || true)" = "1" ]; then
@@ -221,10 +233,8 @@ for i in $(seq 1 90); do
   sleep 2
 done
 [ "$(docker exec instabox-android getprop sys.boot_completed 2>/dev/null || true)" = "1" ]
-if ! adb devices | grep -qE '\\tdevice$'; then
-  adb connect 127.0.0.1:5555 || true
-  adb wait-for-device
-fi
+{_ADB_SELECT_SNIPPET}
+adb wait-for-device
 adb devices
 """
     runner.exec_box(resolved_name, boot_cmd, check=True, timeout=240)
@@ -247,6 +257,7 @@ def clean_environment(
     )
     clean_cmd = f"""
 set +e
+{_ADB_SELECT_SNIPPET}
 {stop_cmds}
 adb shell rm -f /data/local/tmp/miglass_*.png >/dev/null 2>&1 || true
 rm -rf {shlex.quote(BOX_OUT_DIR)} {shlex.quote(BOX_STAGE_DIR)} >/dev/null 2>&1 || true
@@ -318,6 +329,8 @@ def verify_apk_on_box(
 
     run_cmd = f"""
 set -euo pipefail
+{_ADB_SELECT_SNIPPET}
+adb wait-for-device
 adb shell am force-stop {shlex.quote(pkg)} >/dev/null 2>&1 || true
 adb install -r -d {shlex.quote(remote_apk)}
 adb logcat -c

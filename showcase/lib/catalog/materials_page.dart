@@ -5,6 +5,7 @@ import '../screens/traits.dart';
 import '../ui/art.dart';
 import '../ui/kit.dart';
 import 'app.dart';
+import 'hc_glass_lab.dart';
 import 'render_mode_card.dart';
 import 'widgets.dart';
 
@@ -138,6 +139,13 @@ class _MaterialsPageState extends State<MaterialsPage> {
               icon: Icons.auto_awesome_rounded,
               color: const Color(0xffff5a7d),
               onTap: () => host.push(TraitsApp(onBack: host.pop)),
+            ),
+            PrefRow(
+              '原生玻璃 · HC 实验',
+              summary: 'ROM setMiGlass 能否透出 Flutter 画面',
+              icon: Icons.layers_rounded,
+              color: const Color(0xff2fbf71),
+              onTap: () => host.push(HcGlassLab(onBack: host.pop)),
             ),
           ],
         ),

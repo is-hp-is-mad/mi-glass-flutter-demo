@@ -100,6 +100,7 @@ class MainActivity : FlutterActivity() {
             .platformViewsController
             .registry
             .registerViewFactory("hyper_glass/native_view", MultiBackendSurfaceFactory())
+        HcGlassLab.register(flutterEngine)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -135,7 +136,7 @@ private object ActivePlatformViews {
  * Safe reflection bridge exclusively used when the user manually selects the **"小米原生" (`xiaomi_native`)** mode.
  * Wrapped in `runCatching` so non-Xiaomi phones never throw `ClassNotFoundException` or `NoSuchMethodError`.
  */
-private object XiaomiRomReflector {
+internal object XiaomiRomReflector {
     private val sysPropGet by lazy {
         runCatching {
             Class.forName("android.os.SystemProperties")
